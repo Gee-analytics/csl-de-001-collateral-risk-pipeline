@@ -46,21 +46,14 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 | **Cloud/Local** | AWS S3 (Landing Zone), On-Prem SQL Server |
 
 
-Key Engineering Features
-Hybrid Cloud Connectivity
-Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
-Zero-Copy S3 Integration
-Client bank balance files in Amazon S3 are mounted as a native Lakehouse path via Fabric Shortcut. Data stays in S3 with no redundant movement or storage cost.
-Incremental Loading
-Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly.
-Multi-Asset LTV Aggregation
-LTV ratio is computed by aggregating the current market value across all collateral positions per debtor before dividing by outstanding balance. A debtor holding multiple tickers across multiple loans is handled correctly.
-Data Quality Framework
-Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation.
-PII Protection
-Debtor phone numbers, email addresses, and residential addresses are SHA-256 hashed at the Silver layer before any record reaches Gold or the presentation layer.
-Row Level Security
-Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the accounts they are authorised to action.
-Audit Trail
-Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
+<h3> Key Engineering Features </h3>
+<strong>Hybrid Cloud Connectivity</strong>
+Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures. <br>
+
+<strong>Zero-Copy S3 Integration</strong>Zero-Copy S3 Integration
+Client bank balance files in Amazon S3 are mounted as a native Lakehouse path via Fabric Shortcut. 
+Data stays in S3 with no redundant movement or storage cost. <br>
+
+<strong>Incremental Loading</strong>
+Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly. <br>
 
