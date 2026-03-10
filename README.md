@@ -48,28 +48,29 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 
 ### Key Engineering Features
 
-* <u>**Hybrid Cloud Connectivity**</u>:
+* <u>**Hybrid Cloud Connectivity**</u>: <br>
   Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
   
-* <u>**Zero-Copy S3 Integration**</u>:
+* <u>**Zero-Copy S3 Integration**</u>: <br>
   Client bank balance files in S3 are mounted as native Lakehouse paths via Fabric Shortcuts, eliminating redundant data movement and storage costs.
   
-* <u>**Incremental Loading**</u>:
+* <u>**Incremental Loading**</u>: <br>
   Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly.
   
-* <u>**Multi-Asset LTV Aggregation**</u>:
+* <u>**Multi-Asset LTV Aggregation**</u>: <br>
   LTV ratio is computed by aggregating the current market value across all collateral positions per debtor before dividing by outstanding balance. A debtor holding multiple tickers across multiple loans is handled correctly.
   
-* <u>**Data Quality Framework**</u>:
+* <u>**Data Quality Framework**</u>: <br>
   Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
   
-* <u>**PII Protection**</u>:
+* <u>**PII Protection**</u>: <br>
   Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
   
-* <u>**Row-Level Security (RLS)**</u>:
+* <u>**Row-Level Security (RLS)**</u>: <br>
   Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the   <br> accounts they are authorised to action.
   
-* <u>**Audit Trail**</u>: Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
+* <u>**Audit Trail**</u>: <br>
+  Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
 
 
 
