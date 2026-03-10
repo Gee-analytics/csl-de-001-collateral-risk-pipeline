@@ -48,21 +48,21 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 
 ### Key Engineering Features
 
-* **Hybrid Cloud Connectivity**: Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
+* <u>**Hybrid Cloud Connectivity**</u>: Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
   
-* **Zero-Copy S3 Integration**: Client bank balance files in S3 are mounted as native Lakehouse paths via Fabric Shortcuts, eliminating redundant data movement and storage costs.
+* <u>**Zero-Copy S3 Integration**</u>: Client bank balance files in S3 are mounted as native Lakehouse paths via Fabric Shortcuts, eliminating redundant data movement and storage costs.
   
-* **Incremental Loading**: Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly.
+* <u>**Incremental Loading**</u>: Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly.
   
-* **Multi-Asset LTV Aggregation**: LTV ratio is computed by aggregating the current market value across all collateral positions per debtor before dividing by outstanding balance. A debtor holding multiple tickers across multiple loans is handled correctly.
+* <u>**Multi-Asset LTV Aggregation**</u>: LTV ratio is computed by aggregating the current market value across all collateral positions per debtor before dividing by outstanding balance. A debtor holding multiple tickers across multiple loans is handled correctly.
   
-* **Data Quality Framework**: Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
+* <u>**Data Quality Framework**</u>: Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
   
-* **PII Protection**: Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
+* <u>**PII Protection**</u>: Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
   
-* **Row-Level Security (RLS)**: Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the accounts they are authorised to action.
+* <u>**Row-Level Security (RLS)**</u>: Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the accounts they are authorised to action.
   
-* **Audit Trail**: Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
+* <u>**Audit Trail**</u>: Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
 
 
 
