@@ -77,4 +77,45 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 | Data Lineage | Documented from source to Gold layer |
 
 
+### Pipeline Orchestration
 
+The master Fabric Data Pipeline executes all steps in dependency order daily at market close:
+
+| Order | Action |
+| :--- | :--- |
+| 1 | Extract from on-premises SQL Server via Gateway to Bronze |
+| 2 | Validate S3 Shortcut and register new client bank files to Bronze |
+| 3 | Run yfinance Spark Notebook to fetch latest market prices to Bronze |
+| 4 | Run Silver transformation notebook |
+| 5 | Run Gold aggregation notebook |
+| 6 | Trigger Power BI semantic model refresh |
+
+Failed steps trigger an email alert to the Data Engineering team. Each step logs to a pipeline metadata table.
+
+
+### LTV Calculation Logic
+
+Total Collateral Value = SUM(QuantityHeld x CurrentMarketPrice) for all tickers per debtor
+LTV Ratio = OutstandingBalance / Total Collateral Value
+High Risk Flag = TRUE where LTV Ratio > 0.80
+
+Edge case handling: where no price exists for a ticker on the current date, the most recent available price within the last 5 business days is used. Records with no price within 5 days are flagged as STALE DATA and excluded from LTV calculation.
+
+### Architecture Decision Notes
+
+**Lakehouse over Fabric Data Warehouse**:
+A Lakehouse was chosen over a Fabric Data Warehouse because the pipeline is notebook-driven with PySpark, data arrives raw and unstructured at Bronze requiring schema flexibility, and Power BI Direct Lake mode requires Delta tables in a Lakehouse. A Warehouse would be appropriate for a high concurrency SQL analyst workload, which is not the use case here.
+
+**Spark Notebook over Eventstream for API Ingestion**:
+Eventstream is designed for continuous unbounded event streams. Daily end-of-day API calls are a scheduled batch operation. A Spark Notebook provides full control over rate limiting, JSON flattening, incremental watermark logic, and error handling. The tool fits the workload.
+
+**NYSE Tickers over NGX Tickers**:
+NGX-listed securities on Yahoo Finance have inconsistent data coverage and frequent gaps. NYSE and NASDAQ tickers provide reliable, consistent daily price data. In a production environment, NGX securities would be handled via a licensed market data feed.
+
+
+### Project Context
+
+This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage.
+
+
+**CSL-DE-001 | Data Engineering Division | March 2026**
