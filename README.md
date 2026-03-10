@@ -127,6 +127,7 @@ This pipeline was designed and built based on operational challenges observed in
 
 ### Repository Structure
 
+```
 csl-de-001-collateral-risk-pipeline/
 ├── notebooks/
 │   ├── bronze/
@@ -144,24 +145,7 @@ csl-de-001-collateral-risk-pipeline/
 ├── tests/
 ├── .gitignore
 └── README.md
-
-csl-de-001-collateral-risk-pipeline/
-├── notebooks/
-│   ├── bronze/
-│   ├── silver/
-│   └── gold/
-├── pipelines/
-├── data-generation/
-├── scripts/
-│   └── s3-simulation/
-├── docs/
-│   ├── architecture/
-│   ├── data-dictionary/
-│   └── business-rules/
-├── config/
-├── tests/
-├── .gitignore
-└── README.md
+```
 
 
 ***(CSL-DE-001 | Data Engineering Division | March 2026)***
