@@ -60,7 +60,7 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
   
 * <u>**PII Protection**</u>: Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
   
-* <u>Row-Level Security (RLS)</u>: Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the accounts they are authorised to action.
+* <u>**Row-Level Security (RLS)**</u>: Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the accounts they are authorised to action.
   
 * <u>**Audit Trail**</u>: Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
 
