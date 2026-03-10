@@ -145,5 +145,23 @@ csl-de-001-collateral-risk-pipeline/
 ├── .gitignore
 └── README.md
 
+csl-de-001-collateral-risk-pipeline/
+├── notebooks/
+│   ├── bronze/
+│   ├── silver/
+│   └── gold/
+├── pipelines/
+├── data-generation/
+├── scripts/
+│   └── s3-simulation/
+├── docs/
+│   ├── architecture/
+│   ├── data-dictionary/
+│   └── business-rules/
+├── config/
+├── tests/
+├── .gitignore
+└── README.md
+
 
 ***(CSL-DE-001 | Data Engineering Division | March 2026)***
