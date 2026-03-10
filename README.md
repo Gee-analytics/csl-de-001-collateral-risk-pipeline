@@ -58,9 +58,11 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
   
 * <u>**Data Quality Framework**</u>: Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
   
-* <u>**PII Protection**</u>: Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
+* <u>**PII Protection**</u>:
+  Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
   
-* <u>**Row-Level Security (RLS)**</u>: Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the accounts they are authorised to action.
+* <u>**Row-Level Security (RLS)**</u>:
+  Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the   <br> accounts they are authorised to action.
   
 * <u>**Audit Trail**</u>: Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
 
@@ -103,13 +105,13 @@ Edge case handling: where no price exists for a ticker on the current date, the 
 
 ### Architecture Decision Notes
 
-**Lakehouse over Fabric Data Warehouse**:
+**Lakehouse over Fabric Data Warehouse**: <br>
 A Lakehouse was chosen over a Fabric Data Warehouse because the pipeline is notebook-driven with PySpark, data arrives raw and unstructured at Bronze requiring schema flexibility, and Power BI Direct Lake mode requires Delta tables in a Lakehouse. A Warehouse would be appropriate for a high concurrency SQL analyst workload, which is not the use case here.
 
-**Spark Notebook over Eventstream for API Ingestion**:
+**Spark Notebook over Eventstream for API Ingestion**: <br>
 Eventstream is designed for continuous unbounded event streams. Daily end-of-day API calls are a scheduled batch operation. A Spark Notebook provides full control over rate limiting, JSON flattening, incremental watermark logic, and error handling. The tool fits the workload.
 
-**NYSE Tickers over NGX Tickers**:
+**NYSE Tickers over NGX Tickers**: <br>
 NGX-listed securities on Yahoo Finance have inconsistent data coverage and frequent gaps. NYSE and NASDAQ tickers provide reliable, consistent daily price data. In a production environment, NGX securities would be handled via a licensed market data feed.
 
 
