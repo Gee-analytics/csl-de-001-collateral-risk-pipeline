@@ -118,4 +118,4 @@ NGX-listed securities on Yahoo Finance have inconsistent data coverage and frequ
 This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage.
 
 
-**CSL-DE-001 | Data Engineering Division | March 2026**
+_CSL-DE-001 | Data Engineering Division | March 2026_
