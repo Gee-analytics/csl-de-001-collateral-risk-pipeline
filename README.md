@@ -48,15 +48,20 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 
 ### Key Engineering Features
 
-* <u>**Hybrid Cloud Connectivity**</u>: Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
+* <u>**Hybrid Cloud Connectivity**</u>:
+  Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
   
-* <u>**Zero-Copy S3 Integration**</u>: Client bank balance files in S3 are mounted as native Lakehouse paths via Fabric Shortcuts, eliminating redundant data movement and storage costs.
+* <u>**Zero-Copy S3 Integration**</u>:
+  Client bank balance files in S3 are mounted as native Lakehouse paths via Fabric Shortcuts, eliminating redundant data movement and storage costs.
   
-* <u>**Incremental Loading**</u>: Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly.
+* <u>**Incremental Loading**</u>:
+  Watermark-based incremental logic on the SQL Server and API sources ensures only new or changed records are processed on each run, reducing compute cost and pipeline runtime significantly.
   
-* <u>**Multi-Asset LTV Aggregation**</u>: LTV ratio is computed by aggregating the current market value across all collateral positions per debtor before dividing by outstanding balance. A debtor holding multiple tickers across multiple loans is handled correctly.
+* <u>**Multi-Asset LTV Aggregation**</u>:
+  LTV ratio is computed by aggregating the current market value across all collateral positions per debtor before dividing by outstanding balance. A debtor holding multiple tickers across multiple loans is handled correctly.
   
-* <u>**Data Quality Framework**</u>: Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
+* <u>**Data Quality Framework**</u>:
+  Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
   
 * <u>**PII Protection**</u>:
   Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
