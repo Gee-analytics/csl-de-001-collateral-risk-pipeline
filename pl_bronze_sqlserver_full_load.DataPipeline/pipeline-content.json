@@ -1,0 +1,1320 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT\n    ClientID,\n    ClientName,\n    ContactEmail,\n    ContactPhone,\n    S3FolderPath,\n    OnboardedDate,\n    IsActive,\n    GETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.client_bank",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "OverwriteSchema",
+            "applyVOrder": false,
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "dbo",
+                "table": "bronze_client_bank"
+              },
+              "schema": [],
+              "linkedService": {
+                "name": "CSL_Collateral_Risk_LH",
+                "properties": {
+                  "type": "Lakehouse",
+                  "typeProperties": {
+                    "artifactId": "66189b5e-06bb-93c3-467c-80ed7266b952",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000",
+                    "rootFolder": "Tables"
+                  },
+                  "annotations": []
+                }
+              },
+              "annotations": []
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "mappings": [
+              {
+                "source": {
+                  "name": "ClientID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "ClientID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ClientName",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "100"
+                },
+                "sink": {
+                  "name": "ClientName",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ContactEmail",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "100"
+                },
+                "sink": {
+                  "name": "ContactEmail",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ContactPhone",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "ContactPhone",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "S3FolderPath",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "255"
+                },
+                "sink": {
+                  "name": "S3FolderPath",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "OnboardedDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "OnboardedDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "IsActive",
+                  "type": "Boolean",
+                  "physicalType": "bit"
+                },
+                "sink": {
+                  "name": "IsActive",
+                  "physicalType": "boolean"
+                }
+              },
+              {
+                "source": {
+                  "name": "ingestion_timestamp",
+                  "type": "DateTime",
+                  "physicalType": "datetime"
+                },
+                "sink": {
+                  "name": "ingestion_timestamp",
+                  "physicalType": "timestamp"
+                }
+              },
+              {
+                "source": {
+                  "name": "source_system",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "16"
+                },
+                "sink": {
+                  "name": "source_system",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "pipeline_run_id",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "14"
+                },
+                "sink": {
+                  "name": "pipeline_run_id",
+                  "physicalType": "string"
+                }
+              }
+            ],
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": true,
+              "treatBooleanAsNumber": false
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_client_bank_to_bronze",
+        "description": "Full load of client_bank reference table from on-premises SQL Server to bronze_client_bank Delta table in Fabric Lakehouse",
+        "dependsOn": []
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_client_bank_to_bronze_copy1",
+        "description": "Full load of client_bank reference table from on-premises SQL Server to bronze_client_bank Delta table in Fabric Lakehouse",
+        "state": "Inactive",
+        "onInactiveMarkAs": "Succeeded",
+        "dependsOn": []
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT\n    OfficerID,\n    FullName,\n    Email,\n    PhoneNumber,\n    Status,\n    TeamLeadOfficerID,\n    DateJoined,\n    GETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.collections_officer",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "OverwriteSchema",
+            "applyVOrder": false,
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "dbo",
+                "table": "bronze_collections_officer"
+              },
+              "schema": [],
+              "linkedService": {
+                "name": "CSL_Collateral_Risk_LH",
+                "properties": {
+                  "type": "Lakehouse",
+                  "typeProperties": {
+                    "artifactId": "66189b5e-06bb-93c3-467c-80ed7266b952",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000",
+                    "rootFolder": "Tables"
+                  },
+                  "annotations": []
+                }
+              },
+              "annotations": []
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "mappings": [
+              {
+                "source": {
+                  "name": "OfficerID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "OfficerID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "FullName",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "100"
+                },
+                "sink": {
+                  "name": "FullName",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "Email",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "100"
+                },
+                "sink": {
+                  "name": "Email",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "PhoneNumber",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "PhoneNumber",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "Status",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "Status",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "TeamLeadOfficerID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "TeamLeadOfficerID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "DateJoined",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "DateJoined",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "ingestion_timestamp",
+                  "type": "DateTime",
+                  "physicalType": "datetime"
+                },
+                "sink": {
+                  "name": "ingestion_timestamp",
+                  "physicalType": "timestamp"
+                }
+              },
+              {
+                "source": {
+                  "name": "source_system",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "16"
+                },
+                "sink": {
+                  "name": "source_system",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "pipeline_run_id",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "14"
+                },
+                "sink": {
+                  "name": "pipeline_run_id",
+                  "physicalType": "string"
+                }
+              }
+            ],
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": true,
+              "treatBooleanAsNumber": false
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_collections_officer_to_bronze",
+        "description": "Full load of collections_officer table from on-premises SQL Server to bronze_collections_officer Delta table in Fabric Lakehouse",
+        "dependsOn": [
+          {
+            "activity": "copy_client_bank_to_bronze",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT\n\tMappingID,\n\tOfficerID,\n\tClientID,\n\tRegion,\n\tAssignmentStartDate,\n\tAssignmentEndDate,\n\tIsActive,\n\tGETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.officer_client_mapping;",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "OverwriteSchema",
+            "applyVOrder": false,
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "dbo",
+                "table": "bronze_officer_client_mapping"
+              },
+              "schema": [],
+              "linkedService": {
+                "name": "CSL_Collateral_Risk_LH",
+                "properties": {
+                  "type": "Lakehouse",
+                  "typeProperties": {
+                    "artifactId": "66189b5e-06bb-93c3-467c-80ed7266b952",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000",
+                    "rootFolder": "Tables"
+                  },
+                  "annotations": []
+                }
+              },
+              "annotations": []
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "mappings": [
+              {
+                "source": {
+                  "name": "MappingID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "MappingID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "OfficerID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "OfficerID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ClientID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "ClientID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "Region",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "50"
+                },
+                "sink": {
+                  "name": "Region",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "AssignmentStartDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "AssignmentStartDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "AssignmentEndDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "AssignmentEndDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "IsActive",
+                  "type": "Boolean",
+                  "physicalType": "bit"
+                },
+                "sink": {
+                  "name": "IsActive",
+                  "physicalType": "boolean"
+                }
+              },
+              {
+                "source": {
+                  "name": "ingestion_timestamp",
+                  "type": "DateTime",
+                  "physicalType": "datetime"
+                },
+                "sink": {
+                  "name": "ingestion_timestamp",
+                  "physicalType": "timestamp"
+                }
+              },
+              {
+                "source": {
+                  "name": "source_system",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "16"
+                },
+                "sink": {
+                  "name": "source_system",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "pipeline_run_id",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "14"
+                },
+                "sink": {
+                  "name": "pipeline_run_id",
+                  "physicalType": "string"
+                }
+              }
+            ],
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": true,
+              "treatBooleanAsNumber": false
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_officer_client_mapping_to_bronze",
+        "description": "Full load of officer_client_mapping table from on-premises SQL Server to bronze_officer_client_mapping Delta table in Fabric Lakehouse",
+        "dependsOn": [
+          {
+            "activity": "copy_collections_officer_to_bronze",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT\n\tDebtorID,\n\tFullName,\n\tNationalID,\n\tPhoneNumber,\n\tEmailAddress,\n\tResidentialAddress,\n\tRegion,\n\tAssignedOfficerID,\n\tClientID,\n\tDateOnboarded,\n\tGETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.debtor",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "OverwriteSchema",
+            "applyVOrder": false,
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "dbo",
+                "table": "bronze_debtor"
+              },
+              "schema": [],
+              "linkedService": {
+                "name": "CSL_Collateral_Risk_LH",
+                "properties": {
+                  "type": "Lakehouse",
+                  "typeProperties": {
+                    "artifactId": "66189b5e-06bb-93c3-467c-80ed7266b952",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000",
+                    "rootFolder": "Tables"
+                  },
+                  "annotations": []
+                }
+              },
+              "annotations": []
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "mappings": [
+              {
+                "source": {
+                  "name": "DebtorID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "DebtorID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "FullName",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "100"
+                },
+                "sink": {
+                  "name": "FullName",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "NationalID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "NationalID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "PhoneNumber",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "PhoneNumber",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "EmailAddress",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "100"
+                },
+                "sink": {
+                  "name": "EmailAddress",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ResidentialAddress",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "255"
+                },
+                "sink": {
+                  "name": "ResidentialAddress",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "Region",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "50"
+                },
+                "sink": {
+                  "name": "Region",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "AssignedOfficerID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "AssignedOfficerID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ClientID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "ClientID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "DateOnboarded",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "DateOnboarded",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "ingestion_timestamp",
+                  "type": "DateTime",
+                  "physicalType": "datetime"
+                },
+                "sink": {
+                  "name": "ingestion_timestamp",
+                  "physicalType": "timestamp"
+                }
+              },
+              {
+                "source": {
+                  "name": "source_system",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "16"
+                },
+                "sink": {
+                  "name": "source_system",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "pipeline_run_id",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "14"
+                },
+                "sink": {
+                  "name": "pipeline_run_id",
+                  "physicalType": "string"
+                }
+              }
+            ],
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": true,
+              "treatBooleanAsNumber": false
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_debtor_to_bronze",
+        "description": "Full load of debtor table from on-premises SQL Server to bronze_debtor Delta",
+        "dependsOn": [
+          {
+            "activity": "copy_officer_client_mapping_to_bronze",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT\n\tLoanID,\n\tDebtorID,\n\tClientID,\n\tInitialLoanAmount,\n\tOutstandingBalance,\n\tLoanStartDate,\n\tLoanMaturityDate,\n\tDaysPastDue,\n\tLoanStatus,\n\tLastPaymentDate,\n\tLastPaymentAmount,\n\tGETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.loan",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "OverwriteSchema",
+            "applyVOrder": false,
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "dbo",
+                "table": "bronze_loan"
+              },
+              "schema": [],
+              "linkedService": {
+                "name": "CSL_Collateral_Risk_LH",
+                "properties": {
+                  "type": "Lakehouse",
+                  "typeProperties": {
+                    "artifactId": "66189b5e-06bb-93c3-467c-80ed7266b952",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000",
+                    "rootFolder": "Tables"
+                  },
+                  "annotations": []
+                }
+              },
+              "annotations": []
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "mappings": [
+              {
+                "source": {
+                  "name": "LoanID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "LoanID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "DebtorID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "DebtorID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ClientID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "ClientID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "InitialLoanAmount",
+                  "type": "Decimal",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                },
+                "sink": {
+                  "name": "InitialLoanAmount",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                }
+              },
+              {
+                "source": {
+                  "name": "OutstandingBalance",
+                  "type": "Decimal",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                },
+                "sink": {
+                  "name": "OutstandingBalance",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                }
+              },
+              {
+                "source": {
+                  "name": "LoanStartDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "LoanStartDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "LoanMaturityDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "LoanMaturityDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "DaysPastDue",
+                  "type": "Int32",
+                  "physicalType": "int"
+                },
+                "sink": {
+                  "name": "DaysPastDue",
+                  "physicalType": "integer"
+                }
+              },
+              {
+                "source": {
+                  "name": "LoanStatus",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "LoanStatus",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "LastPaymentDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "LastPaymentDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "LastPaymentAmount",
+                  "type": "Decimal",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                },
+                "sink": {
+                  "name": "LastPaymentAmount",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                }
+              },
+              {
+                "source": {
+                  "name": "ingestion_timestamp",
+                  "type": "DateTime",
+                  "physicalType": "datetime"
+                },
+                "sink": {
+                  "name": "ingestion_timestamp",
+                  "physicalType": "timestamp"
+                }
+              },
+              {
+                "source": {
+                  "name": "source_system",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "16"
+                },
+                "sink": {
+                  "name": "source_system",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "pipeline_run_id",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "14"
+                },
+                "sink": {
+                  "name": "pipeline_run_id",
+                  "physicalType": "string"
+                }
+              }
+            ],
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": true,
+              "treatBooleanAsNumber": false
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_loan_to_bronze",
+        "description": "Full load of loan table from on-premises SQL Server to bronze_loan Delta",
+        "dependsOn": [
+          {
+            "activity": "copy_debtor_to_bronze",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Copy",
+        "typeProperties": {
+          "source": {
+            "type": "SqlServerSource",
+            "sqlReaderQuery": "SELECT\n\tCollateralID,\n\tLoanID,\n\tDebtorID,\n\tTickerSymbol,\n\tAssetType,\n\tQuantityHeld,\n\tCollateralValueAtPledge,\n\tCollateralPledgeDate,\n\tExchange,\n\tGETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.collateral",
+            "partitionOption": "None",
+            "queryTimeout": "02:00:00",
+            "datasetSettings": {
+              "type": "SqlServerTable",
+              "typeProperties": {
+                "database": "CSL_DEV"
+              },
+              "schema": [],
+              "externalReferences": {
+                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
+              },
+              "annotations": []
+            }
+          },
+          "sink": {
+            "type": "LakehouseTableSink",
+            "tableActionOption": "OverwriteSchema",
+            "applyVOrder": false,
+            "partitionOption": "None",
+            "datasetSettings": {
+              "type": "LakehouseTable",
+              "typeProperties": {
+                "schema": "dbo",
+                "table": "bronze_collateral"
+              },
+              "schema": [],
+              "linkedService": {
+                "name": "CSL_Collateral_Risk_LH",
+                "properties": {
+                  "type": "Lakehouse",
+                  "typeProperties": {
+                    "artifactId": "66189b5e-06bb-93c3-467c-80ed7266b952",
+                    "workspaceId": "00000000-0000-0000-0000-000000000000",
+                    "rootFolder": "Tables"
+                  },
+                  "annotations": []
+                }
+              },
+              "annotations": []
+            }
+          },
+          "translator": {
+            "type": "TabularTranslator",
+            "mappings": [
+              {
+                "source": {
+                  "name": "CollateralID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "CollateralID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "LoanID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "LoanID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "DebtorID",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "DebtorID",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "TickerSymbol",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "TickerSymbol",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "AssetType",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "AssetType",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "QuantityHeld",
+                  "type": "Decimal",
+                  "physicalType": "decimal",
+                  "scale": 4,
+                  "precision": 18
+                },
+                "sink": {
+                  "name": "QuantityHeld",
+                  "physicalType": "decimal",
+                  "scale": 4,
+                  "precision": 18
+                }
+              },
+              {
+                "source": {
+                  "name": "CollateralValueAtPledge",
+                  "type": "Decimal",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                },
+                "sink": {
+                  "name": "CollateralValueAtPledge",
+                  "physicalType": "decimal",
+                  "scale": 2,
+                  "precision": 18
+                }
+              },
+              {
+                "source": {
+                  "name": "CollateralPledgeDate",
+                  "type": "Date",
+                  "physicalType": "date"
+                },
+                "sink": {
+                  "name": "CollateralPledgeDate",
+                  "physicalType": "date"
+                }
+              },
+              {
+                "source": {
+                  "name": "Exchange",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "20"
+                },
+                "sink": {
+                  "name": "Exchange",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "ingestion_timestamp",
+                  "type": "DateTime",
+                  "physicalType": "datetime"
+                },
+                "sink": {
+                  "name": "ingestion_timestamp",
+                  "physicalType": "timestamp"
+                }
+              },
+              {
+                "source": {
+                  "name": "source_system",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "16"
+                },
+                "sink": {
+                  "name": "source_system",
+                  "physicalType": "string"
+                }
+              },
+              {
+                "source": {
+                  "name": "pipeline_run_id",
+                  "type": "String",
+                  "physicalType": "varchar",
+                  "length": "14"
+                },
+                "sink": {
+                  "name": "pipeline_run_id",
+                  "physicalType": "string"
+                }
+              }
+            ],
+            "typeConversion": true,
+            "typeConversionSettings": {
+              "allowDataTruncation": true,
+              "treatBooleanAsNumber": false
+            }
+          },
+          "enableStaging": false
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "copy_collateral_to_bronze",
+        "description": "Full load of collateral table from on-premises SQL Server to bronze_collateral Delta",
+        "dependsOn": [
+          {
+            "activity": "copy_loan_to_bronze",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

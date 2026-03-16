@@ -1,0 +1,14 @@
+[
+  {
+    "name": "client-drops",
+    "path": "/Files",
+    "target": {
+      "type": "AmazonS3",
+      "amazonS3": {
+        "connectionId": "6e997376-c55e-4bd7-a2d2-d68d5ed4ca90",
+        "location": "s3://csl-collections-landing",
+        "subpath": "/client-drops"
+      }
+    }
+  }
+]
