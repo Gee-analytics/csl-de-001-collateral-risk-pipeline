@@ -278,7 +278,7 @@ def upload_parquet_to_s3(records, client_id, s3_folder, reporting_date, s3_clien
     # Convert dataframe to Parquet bytes in memory
     table = pa.Table.from_pandas(df)
     buffer = io.BytesIO()
-    pq.write_table(table, buffer)
+    pq.write_table(table, buffer, coerce_timestamps='us', allow_truncated_timestamps=True)
     buffer.seek(0)
 
     # Construct the S3 object key using the naming convention
