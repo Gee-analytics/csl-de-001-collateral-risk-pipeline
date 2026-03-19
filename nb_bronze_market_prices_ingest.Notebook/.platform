@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "nb_bronze_market_prices_ingest"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "ea590fda-d9b9-8a9e-407e-8e245ad51b8b"
+  }
+}
