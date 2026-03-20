@@ -101,6 +101,7 @@ PIPELINE_RUN_ID = "manual_run_001"
 end_date = datetime.now().strftime('%Y-%m-%d')
 
 
+
 try:
     # Find the last date we successfully loaded
     # collect()[0][0]: reaches into the 1x1 Spark result and extracts the actual value
@@ -118,6 +119,8 @@ except (AnalysisException, ValueError) as e:
     print(f"Notice: {e}. Calculating dynamic start date (12 months ago).")
     start_date = (datetime.now() - timedelta(days=365)).strftime('%Y-%m-%d')
     print(f"Starting first load from: {start_date}")
+
+    
 
 # Check if there is anything new to fetch
 if start_date >= end_date:
@@ -257,7 +260,14 @@ spark_stock_data_df.head(5)
 
 # MARKDOWN ********************
 
-# ## Step 5
+# ## Step 5: Write to Bronze Delta Table
+# Write the final DataFrame to the bronze_market_prices Delta table.
+# On the first run, the table does not exist so it is created with a full 
+# initial load covering one year of historical prices. On subsequent runs, 
+# only records with a PriceDate newer than the watermark are appended.
+# This pattern ensures no duplicate price records and no unnecessary API calls.
+# If the table is already up to date, the notebook exits cleanly before reaching 
+# this step.
 
 # CELL ********************
 
