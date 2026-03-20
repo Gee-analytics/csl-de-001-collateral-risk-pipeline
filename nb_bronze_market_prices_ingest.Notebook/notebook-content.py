@@ -16,6 +16,10 @@
 # META           "id": "7266b952-80ed-467c-93c3-06bb66189b5e"
 # META         }
 # META       ]
+# META     },
+# META     "environment": {
+# META       "environmentId": "385d5517-c15a-91c7-49e5-fd2f76bea611",
+# META       "workspaceId": "00000000-0000-0000-0000-000000000000"
 # META     }
 # META   }
 # META }
@@ -49,9 +53,10 @@
 
 # CELL ********************
 
-# yfinance is not pre-installed in Fabric Spark environments.
-# The code below is used to install it.
-%pip install yfinance
+# %pip install yfinance
+# yfinance is installed via env_csl_de_001_bronze Fabric Environment.
+# %pip install is disabled in pipeline execution mode.
+# Uncomment only if running interactively without the environment attached.
 
 # METADATA ********************
 
@@ -125,7 +130,8 @@ except (AnalysisException, ValueError) as e:
 # Check if there is anything new to fetch
 if start_date >= end_date:
    # print("Bronze table is already up to date. No new data to fetch.")
-    raise SystemExit("Bronze table is already up to date. No new data to fetch.")
+    #raise SystemExit("Bronze table is already up to date. No new data to fetch.")
+    mssparkutils.notebook.exit("Bronze table is already up to date. No new data to fetch.")
 
 print(f"Watermark: fetching data from {start_date} to {end_date}")
 

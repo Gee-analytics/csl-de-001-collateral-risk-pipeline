@@ -63,6 +63,7 @@ from functools import reduce
 from pyspark.sql import DataFrame
 from pyspark.sql.utils import AnalysisException
 
+
 # Configuration
 SOURCE_ROOT_PATH = "Files/client-drops"
 CLIENT_FOLDERS = ["CLT-001", "CLT-002", "CLT-003", "CLT-004"]
@@ -262,7 +263,8 @@ print(f"New records found: {row_count}")
 # Exit early if nothing new to load
 if row_count == 0:
     print("Client folders have not been updated. No new data to load.")
-    raise SystemExit("No new data to load.")
+    # raise SystemExit("No new data to load.")
+    mssparkutils.notebook.exit("No new data to load.")
 
 # METADATA ********************
 

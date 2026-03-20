@@ -1,0 +1,177 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "InvokePipeline",
+        "typeProperties": {
+          "parameters": {},
+          "waitOnCompletion": true,
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "pipelineId": "63ead2e1-6c3c-a290-4fe8-d0c5afaa4c28",
+          "operationType": "InvokeFabricPipeline"
+        },
+        "externalReferences": {
+          "connection": "5ce59f8d-044d-42b6-83c7-c19109035bed"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "invoke_stream_a_sql_server_bronze",
+        "description": "Invokes the SQL Server Bronze ingestion pipeline pl_bronze_sqlserver_full_load as Stream A of the Bronze layer ingestion",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "641f242e-0785-963b-4c56-e83c7efc1c33",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "run_stream_b_s3_balance_ingest",
+        "description": "Runs the S3 bank balance ingestion notebook as Stream B of the Bronze layer. Only executes after Stream A completes successfully.",
+        "dependsOn": [
+          {
+            "activity": "invoke_stream_a_sql_server_bronze",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "ea590fda-d9b9-8a9e-407e-8e245ad51b8b",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 2,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "run_stream_c_market_prices_ingest",
+        "description": "Runs the yfinance market price ingestion notebook as Stream C of the Bronze layer. Only executes after Stream B completes successfully.",
+        "dependsOn": [
+          {
+            "activity": "wait_spark_cluster_release",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Office365Email",
+        "typeProperties": {
+          "body": "<p>Stream A (SQL Server Bronze Ingestion) has failed in the CSL-DE-001 pipeline.Pipeline Run ID: @{pipeline().RunId}Time: @{utcnow()}Error Details:@{activity('invoke_stream_a_sql_server_bronze').error.message}Please investigate immediately.</p>",
+          "to": "gab-obot@outlook.com",
+          "subject": "[CSL-DE-001] ALERT: Stream A Bronze Ingestion Failed"
+        },
+        "externalReferences": {
+          "connection": "8edf6638-dbd2-46a0-b05c-35d7870797f4"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "email_alert_stream_a_failure",
+        "description": "Sends an email alert to the Data Engineering team when Stream A SQL Server ingestion fails",
+        "dependsOn": [
+          {
+            "activity": "invoke_stream_a_sql_server_bronze",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Office365Email",
+        "typeProperties": {
+          "body": "<p>Stream B (S3 Bank Balance Ingestion) has failed in the CSL-DE-001 pipeline.Pipeline Run ID: @{pipeline().RunId}Time: @{utcnow()}Error Details:@{activity('run_stream_b_s3_balance_ingest').error.message}Please investigate immediately.</p>\n<p><br></p>\n<p><br></p>",
+          "to": "gab-obot@outlook.com",
+          "subject": "[CSL-DE-001] ALERT: Stream B Bronze Ingestion Failed"
+        },
+        "externalReferences": {
+          "connection": "8edf6638-dbd2-46a0-b05c-35d7870797f4"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "email_alert_stream_b_failure",
+        "description": "Sends an email alert to the Data Engineering team when Stream B S3 ingestion fails",
+        "dependsOn": [
+          {
+            "activity": "run_stream_b_s3_balance_ingest",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Office365Email",
+        "typeProperties": {
+          "body": "\nStream C (Yahoo Finance Market Price Ingestion) has failed in the CSL-DE-001 pipeline.\n\nPipeline Run ID: @{pipeline().RunId} \nTime: @{utcnow()} \n\nError Details: \n@{activity('run_stream_c_market_prices_ingest').error.message} \n\nPlease investigate immediately.",
+          "to": "gab-obot@outlook.com",
+          "subject": "[CSL-DE-001] ALERT: Stream C Bronze Ingestion Failed"
+        },
+        "externalReferences": {
+          "connection": "8edf6638-dbd2-46a0-b05c-35d7870797f4"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "email_alert_stream_c_failure",
+        "description": "Sends an email alert to the Data Engineering team when Stream C daily stock price ingestion fails",
+        "dependsOn": [
+          {
+            "activity": "run_stream_c_market_prices_ingest",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Wait",
+        "typeProperties": {
+          "waitTimeInSeconds": 60
+        },
+        "name": "wait_spark_cluster_release",
+        "description": "Waits 60 seconds between Stream B and Stream C to allow the Spark cluster \nresources from Stream B to fully release before Stream C initialises. \nRequired workaround for Fabric trial capacity resource contention.",
+        "dependsOn": [
+          {
+            "activity": "run_stream_b_s3_balance_ingest",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
