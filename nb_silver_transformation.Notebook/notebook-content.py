@@ -302,3 +302,30 @@ print("Section 2 complete. All Bronze tables loaded.")
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark"
 # META }
+
+# MARKDOWN ********************
+
+# --
+# ## Section 3: Clean and Transform `silver_collections_officer`
+# 
+# Produces `silver_collections_officer` from `bronze_collections_officer`.
+# Kept separate from the main joined table because it serves Row Level Security independently.
+# 
+# ### Steps
+# - **Step 3.1** - Standardise PhoneNumber to +234XXXXXXXXXX format
+# - **Step 3.2** - Clean Email column (trim and lowercase)
+# - **Step 3.3** - Validate Status against allowed values
+# - **Step 3.4** - Handle NULL DateJoined with sentinel value and cast to DATE
+# - **Step 3.5** - Add silver_ingestion_timestamp and pipeline_run_id
+# - **Step 3.6** - Select and order final columns
+# - **Step 3.7** - Print summary counts
+
+# CELL ********************
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
