@@ -1,0 +1,241 @@
+# Fabric notebook source
+
+# METADATA ********************
+
+# META {
+# META   "kernel_info": {
+# META     "name": "synapse_pyspark"
+# META   },
+# META   "dependencies": {
+# META     "lakehouse": {
+# META       "default_lakehouse": "7266b952-80ed-467c-93c3-06bb66189b5e",
+# META       "default_lakehouse_name": "CSL_Collateral_Risk_LH",
+# META       "default_lakehouse_workspace_id": "afee936f-76b3-4600-bbec-695c27501baf",
+# META       "known_lakehouses": [
+# META         {
+# META           "id": "7266b952-80ed-467c-93c3-06bb66189b5e"
+# META         }
+# META       ]
+# META     }
+# META   }
+# META }
+
+# MARKDOWN ********************
+
+# # CSL-DE-001 | Silver Layer Transformation Notebook
+# 
+# **Notebook:** `nb_silver_transformation`  
+# **Project:** Collateral Risk Monitoring & Margin Call Automation System  
+# **Organisation:** Collection Solutions Limited (CSL)  
+# **Layer:** Silver  
+# **Version:** 1.0  
+# **Last Updated:** March 2026  
+# 
+# ---
+# 
+# ## Purpose
+# 
+# This notebook transforms raw Bronze layer data into clean, typed, joined, and quality-flagged Silver layer tables.
+# 
+# It is the most complex transformation notebook in the pipeline. It takes data exactly as it arrived from three source systems and produces five Silver tables that the Gold layer can trust and aggregate from.
+# 
+# ---
+# 
+# ## Inputs (Bronze Tables)
+# 
+# | Bronze Table | Source System |
+# |---|---|
+# | `bronze_collections_officer` | On-Premises SQL Server |
+# | `bronze_officer_client_mapping` | On-Premises SQL Server |
+# | `bronze_debtor` | On-Premises SQL Server |
+# | `bronze_loan` | On-Premises SQL Server |
+# | `bronze_collateral` | On-Premises SQL Server |
+# | `bronze_client_bank` | On-Premises SQL Server |
+# | `bronze_bank_balance_update` | Amazon S3 (Client Bank Drops) |
+# | `bronze_market_prices` | yfinance API |
+# 
+# ---
+# 
+# ## Outputs (Silver Tables)
+# 
+# | Silver Table | Description |
+# |---|---|
+# | `silver_collections_officer` | Cleaned officer records with phone standardisation and status validation |
+# | `silver_officer_client_mapping` | Deduplicated assignment records with SCD Type 2 history |
+# | `silver_debtor_loan_collateral` | Pre-joined debtor, loan, and collateral records with quality flags and SCD Type 2 for loan status |
+# | `silver_bank_balance_update` | Cleaned balance update files from client banks |
+# | `silver_market_prices` | Cleaned and typed market price records per ticker per date |
+# 
+# ---
+# 
+# ## Key Design Decisions
+# 
+# - **Quarantine pattern:** No record is ever silently dropped. Every data quality issue is flagged with a specific flag column. Records remain visible in Silver for investigation and remediation.
+# - **`is_eligible_for_ltv` flag:** A single boolean column that the Gold layer uses to filter records before computing LTV ratios. Set to `FALSE` for any record with a critical quality issue.
+# - **PII handling:** `NationalID` is SHA-256 hashed at this layer. `PhoneNumber`, `EmailAddress`, and `ResidentialAddress` are passed through in readable form and protected at the Power BI semantic model level via Row Level Security and Object Level Security.
+# - **SCD Type 2:** Applied to `silver_debtor_loan_collateral` (loan status changes) and `silver_officer_client_mapping` (assignment changes) to preserve historical state for audit and trend analysis.
+# 
+# ---
+# 
+# ## Notebook Structure
+# 
+# | Section | Description |
+# |---|---|
+# | Section 1 | Imports and configuration |
+# | Section 2 | Read all Bronze tables |
+# | Section 3 | Clean and transform `silver_collections_officer` |
+# | Section 4 | Clean and transform `silver_officer_client_mapping` |
+# | Section 5 | Clean and transform `silver_debtor_loan_collateral` |
+# | Section 6 | Clean and transform `silver_bank_balance_update` |
+# | Section 7 | Clean and transform `silver_market_prices` |
+# | Section 8 | Write all Silver tables to Delta |
+# | Section 9 | Log results to `gold_pipeline_metadata` |
+
+
+# MARKDOWN ********************
+
+# ---
+# 
+# ## Section 1: Imports and Configuration
+# 
+# This section imports all libraries needed across the entire notebook and defines the shared configuration variables used in every subsequent section.
+
+# MARKDOWN ********************
+
+# - ## Step 1.1 - Import all required libraries
+# Imports all PySpark, Delta Lake, and standard library modules required across the entire notebook.  
+# All imports are declared here once rather than scattered across sections.
+
+# CELL ********************
+
+# --- Core PySpark imports ---
+from pyspark.sql import SparkSession
+from pyspark.sql import functions as F
+from pyspark.sql.types import (
+    StructType, StructField,
+    StringType, IntegerType, LongType,
+    DecimalType, DateType, BooleanType, TimestampType
+)
+from pyspark.sql.window import Window
+
+# --- Delta Lake import for SCD Type 2 merge operations ---
+from delta.tables import DeltaTable
+
+# --- Standard library ---
+from datetime import datetime, timezone
+# (Universally Unique Identifier) a 128-bit label 
+# used to uniquely identify information in computer systems without a central registration authority.)
+import uuid  
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# 
+# - ## Step 1.2 - Define configuration variables 
+# (paths, run ID, timestamp)
+# Defines the shared constants used throughout the notebook:  
+# - `PIPELINE_RUN_ID` - a unique UUID generated fresh each run, used to trace every Silver row back to the execution that produced it  
+# - `SILVER_INGESTION_TIMESTAMP` - the UTC timestamp of this run  
+# - `BRONZE_PATH` and `SILVER_PATH` - Lakehouse table path prefixes
+
+
+# CELL ********************
+
+# Unique identifier for this notebook run.
+# Every Silver table written in this session will carry this ID.
+# This is what lets you trace a specific row back to a specific pipeline execution.
+PIPELINE_RUN_ID = str(uuid.uuid4())
+
+# Timestamp for this run. Applied as silver_ingestion_timestamp across all tables.
+SILVER_INGESTION_TIMESTAMP = datetime.now(timezone.utc)
+
+# Lakehouse table path prefix.
+# Fabric resolves this relative to the attached Lakehouse (CSL_Collateral_Risk_LH).
+BRONZE_PATH = "Tables/bronze"
+SILVER_PATH = "Tables/silver"
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# - ## Step 1.3 - Define the pipeline metadata logging helper function
+# Defines `log_pipeline_metadata()`, a reusable function called at the end of each section to record row counts, status, and notes into `gold_pipeline_metadata`.  
+# This is the audit trail for the Silver layer.
+
+
+# CELL ********************
+
+# ============================================================
+# LOGGING HELPER
+# ============================================================
+# This function is called at the end of each section to record
+# what was processed. It writes one row to gold_pipeline_metadata
+# per Silver table produced.
+
+def log_pipeline_metadata(table_name, rows_in, rows_out, status, notes=""):
+    """
+    This logs a single pipeline run record for one Silver table.
+
+    Args:
+        table_name  : Name of the Silver table being logged
+        rows_in     : Row count read from Bronze
+        rows_out    : Row count written to Silver
+        status      : 'SUCCESS' or 'FAILED'
+        notes       : Optional notes e.g. quarantine counts
+    """
+    log_row = spark.createDataFrame([{
+        "pipeline_run_id"  : PIPELINE_RUN_ID,
+        "notebook_name"    : "nb_silver_transformation",
+        "table_name"       : table_name,
+        "layer"            : "silver",
+        "rows_in"          : rows_in,
+        "rows_out"         : rows_out,
+        "status"           : status,
+        "notes"            : notes,
+        "run_timestamp"    : SILVER_INGESTION_TIMESTAMP
+    }])
+
+    log_row.write.format("delta").mode("append").save("Tables/gold/gold_pipeline_metadata")
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# - ## Step 1.4 - Print confirmation that configuration is loaded
+# Prints all config values to confirm the section loaded without errors before proceeding.
+
+# CELL ********************
+
+# ============================================================
+# CONFIRMATION
+# ============================================================
+
+print(f"Pipeline Run ID  : {PIPELINE_RUN_ID}")
+print(f"Ingestion TS     : {SILVER_INGESTION_TIMESTAMP}")
+print(f"Bronze path      : {BRONZE_PATH}")
+print(f"Silver path      : {SILVER_PATH}")
+print("Section 1 complete. Ready to read Bronze tables.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
