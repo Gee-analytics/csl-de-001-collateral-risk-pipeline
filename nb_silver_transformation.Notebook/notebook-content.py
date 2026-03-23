@@ -157,8 +157,7 @@ SILVER_INGESTION_TIMESTAMP = datetime.now(timezone.utc)
 
 # Lakehouse table path prefix.
 # Fabric resolves this relative to the attached Lakehouse (CSL_Collateral_Risk_LH).
-BRONZE_PATH = "Tables/bronze"
-SILVER_PATH = "Tables/silver"
+BRONZE_PATH = "Tables/dbo"    
 
 # METADATA ********************
 
@@ -230,8 +229,72 @@ def log_pipeline_metadata(table_name, rows_in, rows_out, status, notes=""):
 print(f"Pipeline Run ID  : {PIPELINE_RUN_ID}")
 print(f"Ingestion TS     : {SILVER_INGESTION_TIMESTAMP}")
 print(f"Bronze path      : {BRONZE_PATH}")
-print(f"Silver path      : {SILVER_PATH}")
 print("Section 1 complete. Ready to read Bronze tables.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Section 2: Read All Bronze Tables
+# 
+# Reads all 8 Bronze Delta tables into Spark DataFrames.
+# No transformations are applied here. This section is purely data loading.
+# Row counts are printed for each table to establish a baseline for reconciliation against Silver output counts.
+# 
+# ### Steps
+# - **Step 2.1** - Read SQL Server sourced Bronze tables (6 tables)
+# - **Step 2.2** - Read S3 sourced Bronze table (1 table)
+# - **Step 2.3** - Read API sourced Bronze table (1 table)
+# - **Step 2.4** - Print row counts for all 8 tables
+
+# CELL ********************
+
+# ============================================================
+# SECTION 2: READ ALL BRONZE TABLES
+# ============================================================
+
+# --- Step 2.1: SQL Server sourced Bronze tables ---
+
+df_bronze_collections_officer = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_collections_officer")
+df_bronze_officer_client_mapping = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_officer_client_mapping")
+df_bronze_debtor = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_debtor")
+df_bronze_loan = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_loan")
+df_bronze_collateral = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_collateral")
+df_bronze_client_bank = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_client_bank")
+
+# --- Step 2.2: S3 sourced Bronze table ---
+
+df_bronze_bank_balance_update = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_bank_balance_update")
+
+# --- Step 2.3: API sourced Bronze table ---
+
+df_bronze_market_prices = spark.read.format("delta").load(f"{BRONZE_PATH}/bronze_market_prices")
+
+# --- Step 2.4: Print row counts for baseline reconciliation ---
+
+bronze_counts = {
+    "bronze_collections_officer"  : df_bronze_collections_officer.count(),
+    "bronze_officer_client_mapping": df_bronze_officer_client_mapping.count(),
+    "bronze_debtor"               : df_bronze_debtor.count(),
+    "bronze_loan"                 : df_bronze_loan.count(),
+    "bronze_collateral"           : df_bronze_collateral.count(),
+    "bronze_client_bank"          : df_bronze_client_bank.count(),
+    "bronze_bank_balance_update"  : df_bronze_bank_balance_update.count(),
+    "bronze_market_prices"        : df_bronze_market_prices.count(),
+}
+
+print("=" * 50)
+print("BRONZE TABLE ROW COUNTS")
+print("=" * 50)
+for table, count in bronze_counts.items():
+    print(f"  {table:<40} {count:>6} rows")
+print("=" * 50)
+print("Section 2 complete. All Bronze tables loaded.")
 
 # METADATA ********************
 
