@@ -309,19 +309,468 @@ print("Section 2 complete. All Bronze tables loaded.")
 # ## Section 3: Clean and Transform `silver_collections_officer`
 # 
 # Produces `silver_collections_officer` from `bronze_collections_officer`.
-# Kept separate from the main joined table because it serves Row Level Security independently.
+# Kept separate because it serves Row Level Security independently at the Power BI semantic model level.
+# 
+# All data quality issues are captured in a single composite `data_quality_flag` column.
+# Records with issues are retained and flagged. Nothing is silently dropped.
 # 
 # ### Steps
 # - **Step 3.1** - Standardise PhoneNumber to +234XXXXXXXXXX format
-# - **Step 3.2** - Clean Email column (trim and lowercase)
+# - **Step 3.2** - Clean Email and flag suspect email addresses
 # - **Step 3.3** - Validate Status against allowed values
 # - **Step 3.4** - Handle NULL DateJoined with sentinel value and cast to DATE
-# - **Step 3.5** - Add silver_ingestion_timestamp and pipeline_run_id
-# - **Step 3.6** - Select and order final columns
-# - **Step 3.7** - Print summary counts
+# - **Step 3.5** - Build composite data_quality_flag column
+# - **Step 3.6** - Add audit columns
+# - **Step 3.7** - Select and order final columns
+# - **Step 3.8** - Print summary counts
 
 # CELL ********************
 
+# ============================================================
+# SECTION 3: CLEAN AND TRANSFORM silver_collections_officer
+# ============================================================
+
+# Start from the raw Bronze DataFrame
+df_officer = df_bronze_collections_officer
+
+# --- Step 3.1: Standardise PhoneNumber to +234XXXXXXXXX format ---
+# Profiling finding: OFF-0005 has 08012345678 (local format)
+#                   OFF-0006 has 234-801-234-5678 (malformed with hyphens)
+# Diagnostic confirmed: clean records have +234 followed by 9 digits.
+# Nigerian mobile numbers are 10 digits including leading zero.
+# Stripping the leading zero leaves 9 digits after the country code.
+# IMPORTANT: Invalid phone numbers are retained as-is and flagged.
+# Setting them to NULL would destroy the original value and violate
+# the quarantine pattern. The flag is sufficient to prevent misuse.
+
+df_officer = df_officer.withColumn(
+    "PhoneNumber_clean",
+    F.when(
+        # Already correct: +234 followed by exactly 9 digits
+        F.col("PhoneNumber").rlike("^\\+234[0-9]{9}$"),
+        F.col("PhoneNumber")
+    ).when(
+        # Local format: 0 followed by exactly 10 digits
+        # Strip leading 0, prepend +234
+        F.col("PhoneNumber").rlike("^0[0-9]{10}$"),
+        F.concat(F.lit("+234"), F.substring(F.col("PhoneNumber"), 2, 10))
+    ).when(
+        # Missing + prefix: 234 followed by exactly 9 digits
+        F.col("PhoneNumber").rlike("^234[0-9]{9}$"),
+        F.concat(F.lit("+"), F.col("PhoneNumber"))
+    ).otherwise(
+        # Cannot be standardised - retain original value, flag below
+        F.col("PhoneNumber")
+    )
+).withColumn(
+    "PhoneNumber_flag",
+    F.when(
+        F.col("PhoneNumber").rlike("^\\+234[0-9]{9}$"),
+        F.lit("CLEAN")
+    ).when(
+        F.col("PhoneNumber").rlike("^0[0-9]{10}$"),
+        F.lit("PHONE_STANDARDISED")
+    ).when(
+        F.col("PhoneNumber").rlike("^234[0-9]{9}$"),
+        F.lit("PHONE_STANDARDISED")
+    ).otherwise(
+        F.lit("PHONE_INVALID")
+    )
+).drop("PhoneNumber").withColumnRenamed("PhoneNumber_clean", "PhoneNumber")
+
+# Quick check - print phone flag distribution
+print("Step 3.1 complete - PhoneNumber flag distribution:")
+df_officer.groupBy("PhoneNumber_flag").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 3.2: Clean Email and flag suspect email addresses ---
+# Profiling finding: OFF-0007 has trailing space in email
+#                   OFF-0008 has email that appears to belong to a different person
+# All emails are trimmed and lowercased unconditionally.
+# Suspect email heuristic: if neither the officer's first name nor last name
+# appears anywhere in their email address, flag as SUSPECT_EMAIL.
+# We cannot correct a suspect email. We flag and retain for HR escalation.
+
+df_officer = df_officer.withColumn(
+    "Email",
+    F.lower(F.trim(F.col("Email")))
+)
+
+# Split FullName into first and last name for the suspect email check.
+# F.split returns an array. Index 0 is first name, index -1 is last name.
+df_officer = df_officer.withColumn(
+    "first_name_lower",
+    F.lower(F.split(F.col("FullName"), " ")[0])
+).withColumn(
+    "last_name_lower",
+    F.lower(F.split(F.col("FullName"), " ")[F.size(F.split(F.col("FullName"), " ")) - 1])
+)
+
+# Flag as SUSPECT_EMAIL if neither first nor last name appears in the email.
+df_officer = df_officer.withColumn(
+    "Email_flag",
+    F.when(
+        F.col("Email").isNull(),
+        F.lit("MISSING_EMAIL")
+    ).when(
+        ~(
+            F.col("Email").contains(F.col("first_name_lower")) |
+            F.col("Email").contains(F.col("last_name_lower"))
+        ),
+        F.lit("SUSPECT_EMAIL")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Drop the helper columns - they were only needed for the check
+df_officer = df_officer.drop("first_name_lower", "last_name_lower")
+
+# Quick check - print email flag distribution and the suspect record
+print("Step 3.2 complete - Email flag distribution:")
+df_officer.groupBy("Email_flag").count().show()
+
+print("Suspect email records:")
+df_officer.filter(F.col("Email_flag") == "SUSPECT_EMAIL").select(
+    "OfficerID", "FullName", "Email", "Email_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 3.3: Validate Status against allowed values ---
+# Profiling finding: Suspended was confirmed as a valid status during profiling.
+# Valid domain: Active, Inactive, Suspended.
+# Anything outside this set is flagged INVALID_STATUS and retained.
+# We never overwrite an unrecognised status. That is a business decision,
+# not a pipeline decision.
+
+VALID_STATUSES = ["Active", "Inactive", "Suspended"]
+
+df_officer = df_officer.withColumn(
+    "Status_flag",
+    F.when(
+        F.col("Status").isin(VALID_STATUSES),
+        F.lit("CLEAN")
+    ).otherwise(
+        F.lit("INVALID_STATUS")
+    )
+)
+
+# Quick check - print status distribution alongside flag
+print("Step 3.3 complete - Status and flag distribution:")
+df_officer.groupBy("Status", "Status_flag").count().orderBy("Status").show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# CELL ********************
+
+# --- Step 3.4: Handle NULL DateJoined with sentinel value and cast to DATE ---
+# Profiling finding: 2 NULLs on OFF-0009 and OFF-0010, both Active status.
+# Order of operations is critical here:
+#   1. Flag first - check for NULL before replacing it
+#   2. Replace NULL with sentinel 1900-01-01
+#   3. Cast to DATE
+# Sentinel value 1900-01-01 signals a known missing date without breaking
+# downstream date calculations the way a NULL would.
+
+df_officer = df_officer.withColumn(
+    "DateJoined_flag",
+    F.when(
+        F.col("DateJoined").isNull(),
+        F.lit("MISSING_JOIN_DATE")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).withColumn(
+    "DateJoined",
+    F.when(
+        F.col("DateJoined").isNull(),
+        F.lit("1900-01-01")
+    ).otherwise(
+        F.col("DateJoined")
+    )
+).withColumn(
+    "DateJoined",
+    F.to_date(F.col("DateJoined"), "yyyy-MM-dd")
+)
+
+# Quick check - flag distribution and confirm sentinel records
+print("Step 3.4 complete - DateJoined flag distribution:")
+df_officer.groupBy("DateJoined_flag").count().show()
+
+print("Sentinel date records:")
+df_officer.filter(F.col("DateJoined_flag") == "MISSING_JOIN_DATE").select(
+    "OfficerID", "FullName", "DateJoined", "DateJoined_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 3.5: Build composite data_quality_flag column ---
+# Combines all individual flag columns into a single column.
+# Records with no issues carry CLEAN.
+# Records with one or more issues carry pipe-separated issue codes.
+# Example: SUSPECT_EMAIL|MISSING_JOIN_DATE
+# Individual flag columns are dropped after the composite is built.
+# This keeps the Silver table schema clean and queryable from one column.
+
+df_officer = df_officer.withColumn(
+    "data_quality_flag",
+    F.when(
+        # Build array of all non-CLEAN flags and check if any exist
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("PhoneNumber_flag"),
+                    F.col("Email_flag"),
+                    F.col("Status_flag"),
+                    F.col("DateJoined_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        # All flags are CLEAN
+        F.lit("CLEAN")
+    ).otherwise(
+        # Join non-CLEAN flags with pipe separator
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("PhoneNumber_flag"),
+                    F.col("Email_flag"),
+                    F.col("Status_flag"),
+                    F.col("DateJoined_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop("PhoneNumber_flag", "Email_flag", "Status_flag", "DateJoined_flag")
+
+# Quick check - show composite flag distribution
+print("Step 3.5 complete - Composite data_quality_flag distribution:")
+df_officer.groupBy("data_quality_flag").count().orderBy("count", ascending=False).show(truncate=False)
+
+# Show the flagged records in full
+print("Flagged records:")
+df_officer.filter(F.col("data_quality_flag") != "CLEAN").select(
+    "OfficerID", "FullName", "data_quality_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 3.6: Add audit columns ---
+# silver_ingestion_timestamp and pipeline_run_id are defined in Section 1.
+# Applied consistently to every Silver table in this notebook.
+
+df_officer = df_officer.withColumn(
+    "silver_ingestion_timestamp", F.lit(SILVER_INGESTION_TIMESTAMP).cast(TimestampType())
+).withColumn(
+    "pipeline_run_id", F.lit(PIPELINE_RUN_ID)
+)
+
+# --- Step 3.7: Select and order final columns ---
+# Explicit column selection ensures no intermediate helper columns
+# leak into the Silver table. Column order follows the convention:
+# primary key first, business columns, flag column, audit columns last.
+
+df_silver_collections_officer = df_officer.select(
+    "OfficerID",
+    "FullName",
+    "Email",
+    "PhoneNumber",
+    "Status",
+    "DateJoined",
+    "TeamLeadOfficerID",
+    "data_quality_flag",
+    "ingestion_timestamp",
+    "source_system",
+    "pipeline_run_id",
+    "silver_ingestion_timestamp"
+)
+
+# --- Step 3.8: Print summary counts ---
+
+total            = df_silver_collections_officer.count()
+clean            = df_silver_collections_officer.filter(F.col("data_quality_flag") == "CLEAN").count()
+flagged          = df_silver_collections_officer.filter(F.col("data_quality_flag") != "CLEAN").count()
+phone_std        = df_silver_collections_officer.filter(F.col("data_quality_flag").contains("PHONE_STANDARDISED")).count()
+phone_invalid    = df_silver_collections_officer.filter(F.col("data_quality_flag").contains("PHONE_INVALID")).count()
+suspect_email    = df_silver_collections_officer.filter(F.col("data_quality_flag").contains("SUSPECT_EMAIL")).count()
+missing_date     = df_silver_collections_officer.filter(F.col("data_quality_flag").contains("MISSING_JOIN_DATE")).count()
+
+print("=" * 55)
+print("silver_collections_officer SUMMARY")
+print("=" * 55)
+print(f"  Total records              : {total}")
+print(f"  Clean records              : {clean}")
+print(f"  Flagged records            : {flagged}")
+print(f"  Phone standardised         : {phone_std}")
+print(f"  Phone invalid              : {phone_invalid}")
+print(f"  Suspect email              : {suspect_email}")
+print(f"  Missing join date          : {missing_date}")
+print("=" * 55)
+print("Section 3 complete. df_silver_collections_officer ready.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_officer.printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_officer1 = df_bronze_collections_officer
+df_officer1.show(22)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+df_officer.show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+b_collections_officer = df_bronze_collections_officer
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+b_collections_officer.show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+"""
+b_collections_officer = b_collections_officer.withColumn(
+    # strip the leading and the trailing spaces
+    # convert every value in the col to lowercase 
+    "Email", F.lower(F.trim(F.col("Email")))
+)
+"""
+# convert every value in the col to lowercase 
+b_collections_officer = b_collections_officer.withColumn("Email", F.lower("Email"))
+
+# strip the leading and the trailing spaces
+b_collections_officer = b_collections_officer.withColumn("Email", F.trim("Email"))
+
+
+# Apply BOTH transformations to the column in a single pass
+b_collections_officer = b_collections_officer.withColumn("Email", F.trim(F.lower("Email")))
+
+
+
+    # strip the leading and the trailing spaces
+    # convert every value in the col to lowercase
+
+
+
+
+
+# Split FullName into first and last name for the suspect email check.
+# F.split returns an array. Index 0 is first name, index -1 is last name.
+df_officer = df_officer.withColumn(
+    "first_name_lower",
+    F.lower(F.split(F.col("FullName"), " ")[0])
+).withColumn(
+    "last_name_lower",
+    F.lower(F.split(F.col("FullName"), " ")[F.size(F.split(F.col("FullName"), " ")) - 1])
+)
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+# Diagnostic: show all raw PhoneNumber values from Bronze#
+# df_bronze_collections_officer.select("OfficerID", "PhoneNumber").show(20, truncate=False)
 
 # METADATA ********************
 
