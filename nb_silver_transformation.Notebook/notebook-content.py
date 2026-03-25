@@ -2108,6 +2108,7 @@ df_collateral.groupBy("collateral_data_quality_flag").count().orderBy(
 
 # MARKDOWN ********************
 
+# ---
 # ### Join and SCD Type 2
 # - **Step 5.18** - Three way join
 # - **Step 5.19** - Generate surrogate key
@@ -2115,6 +2116,475 @@ df_collateral.groupBy("collateral_data_quality_flag").count().orderBy(
 # - **Step 5.21** - Add audit columns
 # - **Step 5.22** - Select and order final columns
 # - **Step 5.23** - Print summary counts
+
+# MARKDOWN ********************
+
+# ---
+# ### **Step 5.18** - Three way join
+
+# CELL ********************
+
+# --- Step 5.18: Resolve duplicate columns and execute three way join ---
+# Join sequence follows the natural data model hierarchy:
+#   Debtor owns Loans, Loans have Collateral.
+#   df_debtor --> df_loan on DebtorID --> df_collateral on LoanID
+#
+# Duplicate resolution strategy:
+#   1. Rename audit columns and flag columns on all three DataFrames
+#      before any join to avoid ambiguity during join execution.
+#   2. Drop ClientID from df_loan before the first join.
+#      ClientID is authoritative on df_debtor. The copy on df_loan
+#      is redundant and is not needed as a join key.
+#   3. Execute first join: df_debtor to df_loan on DebtorID.
+#      Spark deduplicates DebtorID automatically when using on= syntax.
+#   4. Run diagnostic to identify remaining duplicates between the
+#      joined result and df_collateral before executing the second join.
+#      Diagnostic found: DebtorID and LoanID shared between both.
+#      LoanID is the join key for the second join so it must remain.
+#      DebtorID is not a join key for the second join. The authoritative
+#      copy already exists in the joined result from df_debtor.
+#   5. Drop DebtorID from df_collateral before the second join.
+#   6. Execute second join: df_silver_debtor_loan to df_collateral on LoanID.
+#      Spark deduplicates LoanID automatically when using on= syntax.
+#
+# Result: 300 rows, no duplicate columns, grain confirmed at
+# one collateral asset per loan per debtor.
+# All three flag columns and both eligibility flags independently visible.
+
+# --- Pre-join: rename audit columns and flag columns ---
+df_loan = df_loan \
+    .drop("pipeline_run_id") \
+    .withColumnRenamed("ingestion_timestamp", "loan_ingestion_timestamp") \
+    .withColumnRenamed("source_system", "loan_source_system") \
+    .withColumnRenamed("is_eligible_for_ltv", "loan_is_eligible_for_ltv")
+
+df_collateral = df_collateral \
+    .drop("pipeline_run_id") \
+    .withColumnRenamed("ingestion_timestamp", "collateral_ingestion_timestamp") \
+    .withColumnRenamed("source_system", "collateral_source_system") \
+    .withColumnRenamed("is_eligible_for_ltv", "collateral_is_eligible_for_ltv")
+
+df_debtor = df_debtor \
+    .drop("pipeline_run_id") \
+    .withColumnRenamed("ingestion_timestamp", "debtor_ingestion_timestamp") \
+    .withColumnRenamed("source_system", "debtor_source_system")
+
+# before executing the first join
+# drop the clientID col from the df_loan dataframe
+df_loan = df_loan.drop("ClientID")
+
+
+# --- First join: df_debtor to df_loan on DebtorID ---
+
+df_silver_debtor_loan = df_debtor \
+    .join(df_loan, on="DebtorID", how="left") 
+
+
+df_silver_debtor_loan.printSchema()
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# CELL ********************
+
+# --- Diagnostic: find duplicates between joined result and df_collateral ---
+# DebtorID found in both. Not a join key for second join.
+
+silver_debtor_loan_cols = set(df_silver_debtor_loan.columns)
+collateral_cols = set(df_collateral.columns)
+
+print("silver_debtor_loan_cols and collateral_cols :")
+print(silver_debtor_loan_cols & collateral_cols)
+
+# Drop from df_collateral before proceeding.
+df_collateral = df_collateral.drop("DebtorID")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# Go on to join df_silver_debtor_loan to df_collateral 
+
+df_silver_debtor_loan_collateral = df_silver_debtor_loan.\
+                        join(df_collateral, on="LoanID", how="left")
+
+df_silver_debtor_loan_collateral.printSchema()
+
+# Row count check
+total = df_silver_debtor_loan_collateral.count()
+print(f"\nStep 5.18 complete - Three way join row count: {total}")
+print(f"Expected: 300")
+print(f"Match: {total == 300}")
+
+print("\nSample joined record:")
+df_silver_debtor_loan_collateral.select(
+    "DebtorID",
+    "LoanID",
+    "CollateralID",
+    "TickerSymbol",
+    "OutstandingBalance",
+    "QuantityHeld",
+    "debtor_data_quality_flag",
+    "loan_data_quality_flag",
+    "collateral_data_quality_flag",
+    "loan_is_eligible_for_ltv",
+    "collateral_is_eligible_for_ltv"
+).show(3, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 5.19** - Generate surrogate key
+
+
+# CELL ********************
+
+# --- Step 5.19: Generate surrogate key dlc_sk ---
+# Three approaches exist for surrogate key generation in PySpark:
+#
+# Option 1: SHA-256 hash (chosen approach)
+#   Produces a 64 character deterministic string.
+#   Deterministic means the same input always produces the same key
+#   across every pipeline run. Key stability is critical here because
+#   Gold layer aggregations and downstream joins rely on consistent keys.
+#   Tradeoff: long and not human readable.
+#
+# Option 2: UUID (F.expr("uuid()"))
+#   Produces a shorter 36 character string.
+#   NOT deterministic. Every pipeline run generates a different UUID
+#   for the same record. This breaks downstream joins that rely on
+#   key stability across runs. Rejected for this reason.
+#
+# Option 3: monotonically_increasing_id()
+#   Produces a simple incrementing integer. Short and readable.
+#   NOT deterministic. The integer assigned to a row depends on Spark
+#   partition processing order which can change between runs.
+#   Rejected for the same reason as UUID.
+#
+# SHA-256 was chosen because determinism is non-negotiable in a
+# production pipeline. The length is a storage and readability cost
+# worth paying for key stability across daily pipeline runs.
+#
+# Note: trimming to the first 16 characters is a valid optimisation
+# for large datasets. Collision probability remains effectively zero
+# at this data volume. Full 64 characters retained here for maximum
+# safety in a financial domain context.
+#
+# dlc_sk = debtor loan collateral surrogate key.
+# Natural key components: DebtorID + LoanID + CollateralID.
+
+
+df_silver_debtor_loan_collateral = df_silver_debtor_loan_collateral.withColumn(
+    "dlc_sk",
+    F.sha2(
+        F.concat_ws("|",
+            F.col("DebtorID"),
+            F.col("LoanID"),
+            F.col("CollateralID")
+        ),
+        256
+    )
+)
+
+# Confirm uniqueness of surrogate key
+total_rows = df_silver_debtor_loan_collateral.count()
+distinct_keys = df_silver_debtor_loan_collateral.select("dlc_sk").distinct().count()
+
+print("Step 5.19 complete - Surrogate key generation:")
+print(f"  Total rows       : {total_rows}")
+print(f"  Distinct keys    : {distinct_keys}")
+print(f"  Keys unique      : {total_rows == distinct_keys}")
+
+print("\nSample surrogate keys:")
+df_silver_debtor_loan_collateral.select(
+    "DebtorID", "LoanID", "CollateralID", "dlc_sk"
+).show(3, truncate=False)
+
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 5.20** - Add SCD Type 2 columns
+
+# CELL ********************
+
+# --- Step 5.20: Add SCD Type 2 columns ---
+# SCD Type 2 is applied for LoanStatus changes.
+# When a loan status changes, a new row is inserted with a new
+# EffectiveStartDate and the old row gets an EffectiveEndDate.
+# This preserves the full history of loan status changes for audit
+# and trend analysis in a financial services context.
+#
+# Initial load: every record is the current version.
+# EffectiveStartDate = today's date (first time this record enters Silver)
+# EffectiveEndDate   = NULL (no superseding record exists yet)
+# IsCurrent          = TRUE (all records are current on initial load)
+#
+# On subsequent runs, the Delta merge in Section 8 handles:
+# - Detecting LoanStatus changes by comparing incoming vs existing rows
+# - Closing old rows by setting EffectiveEndDate and IsCurrent = FALSE
+# - Inserting new rows with updated EffectiveStartDate and IsCurrent = TRUE
+
+df_silver_debtor_loan_collateral = df_silver_debtor_loan_collateral \
+    .withColumn(
+        "EffectiveStartDate",
+        F.current_date()
+    ).withColumn(
+        "EffectiveEndDate",
+        F.lit(None).cast(DateType())
+    ).withColumn(
+        "IsCurrent",
+        F.lit(True)
+    )
+
+# Quick check
+print("Step 5.20 complete - SCD Type 2 columns added:")
+df_silver_debtor_loan_collateral.select(
+    "DebtorID", "LoanID", "LoanStatus",
+    "EffectiveStartDate", "EffectiveEndDate", "IsCurrent"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 5.21** - Add audit columns
+
+
+# CELL ********************
+
+# --- Step 5.21: Add audit columns ---
+# silver_ingestion_timestamp and pipeline_run_id defined in Section 1.
+# Applied consistently to every Silver table in this notebook.
+# Bronze pipeline_run_id was dropped from all three source DataFrames
+# in Step 5.18 pre-join resolution. This Silver pipeline_run_id
+# replaces all three Bronze versions with a single Silver run identifier.
+
+df_silver_debtor_loan_collateral = df_silver_debtor_loan_collateral \
+    .withColumn(
+        "silver_ingestion_timestamp",
+        F.lit(SILVER_INGESTION_TIMESTAMP).cast(TimestampType())
+    ).withColumn(
+        "pipeline_run_id", F.lit(PIPELINE_RUN_ID)
+    )
+
+print("Step 5.21 complete - Audit columns added.")
+print(f"  pipeline_run_id            : {PIPELINE_RUN_ID}")
+print(f"  silver_ingestion_timestamp : {SILVER_INGESTION_TIMESTAMP}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 5.22** - Select and order final columns
+
+
+# CELL ********************
+
+# --- Step 5.22: Select and order final columns ---
+# Explicit column selection ensures no intermediate helper columns
+# leak into the Silver table.
+# Column order convention:
+#   Surrogate key first, natural keys, debtor columns, loan columns,
+#   collateral columns, SCD Type 2 columns, flag columns, audit columns last.
+
+df_silver_debtor_loan_collateral = df_silver_debtor_loan_collateral.select(
+
+    # Surrogate key
+    "dlc_sk",
+
+    # Natural keys
+    "DebtorID",
+    "LoanID",
+    "CollateralID",
+
+    # Debtor business columns
+    "ClientID",
+    "AssignedOfficerID",
+    "assigned_officer_status",
+    "FullName",
+    "NationalID",
+    "PhoneNumber",
+    "EmailAddress",
+    "ResidentialAddress",
+    "Region",
+    "DateOnboarded",
+
+    # Loan business columns
+    "InitialLoanAmount",
+    "OutstandingBalance",
+    "LoanStartDate",
+    "LoanMaturityDate",
+    "DaysPastDue",
+    "LoanStatus",
+    "LastPaymentDate",
+    "LastPaymentAmount",
+
+    # Collateral business columns
+    "TickerSymbol",
+    "AssetType",
+    "Exchange",
+    "QuantityHeld",
+    "CollateralValueAtPledge",
+    "CollateralPledgeDate",
+
+    # SCD Type 2 columns
+    "EffectiveStartDate",
+    "EffectiveEndDate",
+    "IsCurrent",
+
+    # Flag and eligibility columns
+    "loan_is_eligible_for_ltv",
+    "collateral_is_eligible_for_ltv",
+    "debtor_data_quality_flag",
+    "loan_data_quality_flag",
+    "collateral_data_quality_flag",
+
+    # Audit columns
+    "debtor_ingestion_timestamp",
+    "loan_ingestion_timestamp",
+    "collateral_ingestion_timestamp",
+    "debtor_source_system",
+    "loan_source_system",
+    "collateral_source_system",
+    "pipeline_run_id",
+    "silver_ingestion_timestamp"
+)
+
+print("Step 5.22 complete - Final column selection confirmed.")
+print(f"Total columns : {len(df_silver_debtor_loan_collateral.columns)}")
+print(f"Total rows    : {df_silver_debtor_loan_collateral.count()}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 5.23** - Print summary counts
+
+# CELL ********************
+
+# --- Step 5.23: Print summary counts ---
+# This is the final step in Section 5. It gives a complete picture of what the entire section produced across all three phases.
+
+total                   = df_silver_debtor_loan_collateral.count()
+loan_eligible           = df_silver_debtor_loan_collateral.filter(F.col("loan_is_eligible_for_ltv") == True).count()
+loan_ineligible         = df_silver_debtor_loan_collateral.filter(F.col("loan_is_eligible_for_ltv") == False).count()
+collateral_eligible     = df_silver_debtor_loan_collateral.filter(F.col("collateral_is_eligible_for_ltv") == True).count()
+collateral_ineligible   = df_silver_debtor_loan_collateral.filter(F.col("collateral_is_eligible_for_ltv") == False).count()
+both_eligible           = df_silver_debtor_loan_collateral.filter(
+    (F.col("loan_is_eligible_for_ltv") == True) &
+    (F.col("collateral_is_eligible_for_ltv") == True)
+).count()
+debtor_flagged          = df_silver_debtor_loan_collateral.filter(F.col("debtor_data_quality_flag") != "CLEAN").count()
+loan_flagged            = df_silver_debtor_loan_collateral.filter(F.col("loan_data_quality_flag") != "CLEAN").count()
+collateral_flagged      = df_silver_debtor_loan_collateral.filter(F.col("collateral_data_quality_flag") != "CLEAN").count()
+current_records         = df_silver_debtor_loan_collateral.filter(F.col("IsCurrent") == True).count()
+
+print("=" * 60)
+print("silver_debtor_loan_collateral SUMMARY")
+print("=" * 60)
+print(f"  Total records                    : {total}")
+print(f"  Loan eligible for LTV            : {loan_eligible}")
+print(f"  Loan ineligible for LTV          : {loan_ineligible}")
+print(f"  Collateral eligible for LTV      : {collateral_eligible}")
+print(f"  Collateral ineligible for LTV    : {collateral_ineligible}")
+print(f"  Both eligible for LTV            : {both_eligible}")
+print(f"  Debtor flagged records           : {debtor_flagged}")
+print(f"  Loan flagged records             : {loan_flagged}")
+print(f"  Collateral flagged records       : {collateral_flagged}")
+print(f"  Current SCD records              : {current_records}")
+print("=" * 60)
+print("Section 5 complete. df_silver_debtor_loan_collateral ready.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# CELL ********************
+
+debtor_cols = set(df_debtor.columns)
+loan_cols = set(df_loan.columns)
+collateral_cols = set(df_collateral.columns)
+
+print("Columns in both debtor and loan:")
+print(debtor_cols & loan_cols)
+
+# print("\nColumns in both loan and collateral:")
+# print(loan_cols & collateral_cols)
+
+# print("\nColumns in both debtor and collateral:")
+# print(debtor_cols & collateral_cols)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# CELL ********************
+
+print("Loan columns with eligibility:")
+print([c for c in df_loan.columns if "eligible" in c.lower()])
+
+print("Collateral columns with eligibility:")
+print([c for c in df_collateral.columns if "eligible" in c.lower()])
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
 
 # CELL ********************
 
@@ -2127,7 +2597,9 @@ filtered_df_collateral = df_collateral.filter(
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
 # META }
 
 # CELL ********************
