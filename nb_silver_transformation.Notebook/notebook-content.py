@@ -1409,20 +1409,49 @@ df_debtor.filter(
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ### Phase B: Clean bronze_loan
+# - **Step 5.7** - Flag payment before loan start date
+# - **Step 5.8** - Flag settled loans with balance anomalies
+# - **Step 5.9** - Flag balance exceeding initial loan amount
+# - **Step 5.10** - Flag inverted loan dates
+# - **Step 5.11** - Set is_eligible_for_ltv
+# - **Step 5.12** - Build loan data_quality_flag
+
 # CELL ********************
 
-demo_silver_debtor_loan_collateral_1 = df_bronze_debtor \
-                        .join(df_bronze_loan, on = "DebtorID", how="left") \
-                        .join(df_bronze_collateral, on="LoanID", how="left")
+# --- PHASE B: CLEAN bronze_loan ---
 
+# Start from the raw Bronze DataFrame
+df_loan = df_bronze_loan
 
-# demo_silver_debtor_loan_collateral_1.show()
+# --- Step 5.7: Flag payment before loan start date ---
+# Profiling finding: 83 loans have LastPaymentDate before LoanStartDate.
+# A payment recorded before the loan was issued is impossible.
+# This is a systemic source system failure, likely a legacy migration error.
+# S3 is the system of record for payment data per the formal business rule.
+# SQL Server LastPaymentDate is superseded by S3 at Silver anyway.
+# However these records must be flagged for audit purposes so the source system owner has evidence of the corruption.
+# We do not correct the value. We flag and retain.
 
+df_loan = df_loan.withColumn(
+    "PaymentDate_flag",
+    F.when(
+        (F.col("LastPaymentDate").isNotNull()) &
+        (F.col("LastPaymentDate") < F.col("LoanStartDate")),
+        F.lit("PAYMENT_BEFORE_LOAN_START")
+    ).when(
+        F.col("LastPaymentDate").isNull(),
+        F.lit("NO_PAYMENT_HISTORY")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
 
-total_rows = demo_silver_debtor_loan_collateral_1.count()
-
-print(f"The DataFrame has {total_rows} rows.")
-
+# Quick check
+print("Step 5.7 complete - PaymentDate flag distribution:")
+df_loan.groupBy("PaymentDate_flag").count().orderBy("count", ascending=False).show()
 
 # METADATA ********************
 
@@ -1433,6 +1462,275 @@ print(f"The DataFrame has {total_rows} rows.")
 
 # CELL ********************
 
+# --- Step 5.8: Flag settled loans with balance anomalies ---
+# Profiling finding 1: 7 loans with LoanStatus = Settled but
+# OutstandingBalance > 0. A settled loan must have zero balance.
+# Profiling finding 2: 6 loans with LoanStatus = Settled but
+# DaysPastDue > 0. A settled loan cannot be past due.
+# 5 of these 6 loans overlap with finding 1.
+# We do not auto-correct either value. Both may be correct and the
+# status may be wrong, or vice versa. Human review required.
+# Composite flag pattern handles the 5 overlapping records automatically.
+
+df_loan = df_loan.withColumn(
+    "SettledBalance_flag",
+    F.when(
+        (F.col("LoanStatus") == "Settled") &
+        (F.col("OutstandingBalance") > 0),
+        F.lit("SETTLED_WITH_BALANCE")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).withColumn(
+    "SettledDPD_flag",
+    F.when(
+        (F.col("LoanStatus") == "Settled") &
+        (F.col("DaysPastDue") > 0),
+        F.lit("SETTLED_PAST_DUE")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 5.8 complete - Settled anomaly flag distributions:")
+print("\nSettledBalance_flag:")
+df_loan.groupBy("SettledBalance_flag").count().show()
+
+print("SettledDPD_flag:")
+df_loan.groupBy("SettledDPD_flag").count().show()
+
+print("Overlapping records (both flags):")
+df_loan.filter(
+    (F.col("SettledBalance_flag") == "SETTLED_WITH_BALANCE") &
+    (F.col("SettledDPD_flag") == "SETTLED_PAST_DUE")
+).select(
+    "LoanID", "LoanStatus", "OutstandingBalance",
+    "DaysPastDue", "SettledBalance_flag", "SettledDPD_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.9: Flag balance exceeding initial loan amount ---
+# Profiling finding: 8 loans where OutstandingBalance > InitialLoanAmount.
+# A balance cannot exceed the original loan without capitalised penalties
+# which are not modelled in this schema.
+# Either value could be wrong. Do not auto-correct.
+# Flag and exclude from LTV calculation pending business clarification.
+
+df_loan = df_loan.withColumn(
+    "BalanceExceedsInitial_flag",
+    F.when(
+        F.col("OutstandingBalance") > F.col("InitialLoanAmount"),
+        F.lit("BALANCE_EXCEEDS_INITIAL")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 5.9 complete - BalanceExceedsInitial flag distribution:")
+df_loan.groupBy("BalanceExceedsInitial_flag").count().show()
+
+print("Flagged records sample:")
+df_loan.filter(
+    F.col("BalanceExceedsInitial_flag") == "BALANCE_EXCEEDS_INITIAL"
+).select(
+    "LoanID",
+    "InitialLoanAmount",
+    "OutstandingBalance",
+    "BalanceExceedsInitial_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.10: Flag inverted loan dates ---
+# Profiling finding: 3 loans where LoanMaturityDate is before LoanStartDate.
+# Dates appear to have been swapped at data entry.
+# We do not auto-swap. Either date could be the error.
+# Escalate to source system owner for manual correction.
+# These records will be excluded from LTV calculation in Step 5.11
+# because a valid loan time horizon cannot be determined.
+
+df_loan = df_loan.withColumn(
+    "InvertedDates_flag",
+    F.when(
+        F.col("LoanMaturityDate") < F.col("LoanStartDate"),
+        F.lit("INVERTED_LOAN_DATES")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 5.10 complete - InvertedDates flag distribution:")
+df_loan.groupBy("InvertedDates_flag").count().show()
+
+print("Inverted date records:")
+df_loan.filter(F.col("InvertedDates_flag") == "INVERTED_LOAN_DATES").select(
+    "LoanID", "LoanStartDate", "LoanMaturityDate", "InvertedDates_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.11: Set is_eligible_for_ltv for loan records ---
+# The Gold layer uses this single boolean to filter records before
+# computing LTV. Silver makes the eligibility decision. Gold respects it.
+#
+# FALSE conditions for loan records:
+#   1. InvertedDates_flag = INVERTED_LOAN_DATES
+#      Cannot determine valid loan time horizon.
+#   2. SettledBalance_flag = SETTLED_WITH_BALANCE
+#      Outstanding balance is untrustworthy on a settled loan.
+#   3. BalanceExceedsInitial_flag = BALANCE_EXCEEDS_INITIAL
+#      Balance figure is untrustworthy without capitalised penalty modelling.
+#
+# PAYMENT_BEFORE_LOAN_START does not trigger FALSE because S3 supersedes
+# SQL Server payment data. The corrupted field does not enter LTV formula.
+# SETTLED_PAST_DUE does not trigger FALSE because DaysPastDue is not
+# part of the LTV formula.
+
+df_loan = df_loan.withColumn(
+    "is_eligible_for_ltv",
+    F.when(
+        (F.col("InvertedDates_flag") == "INVERTED_LOAN_DATES") |
+        (F.col("SettledBalance_flag") == "SETTLED_WITH_BALANCE") |
+        (F.col("BalanceExceedsInitial_flag") == "BALANCE_EXCEEDS_INITIAL"),
+        F.lit(False)
+    ).otherwise(
+        F.lit(True)
+    )
+)
+
+# Quick check
+print("Step 5.11 complete - is_eligible_for_ltv distribution:")
+df_loan.groupBy("is_eligible_for_ltv").count().show()
+
+print("Ineligible loan records:")
+df_loan.filter(F.col("is_eligible_for_ltv") == False).select(
+    "LoanID",
+    "LoanStatus",
+    "OutstandingBalance",
+    "InitialLoanAmount",
+    "InvertedDates_flag",
+    "SettledBalance_flag",
+    "BalanceExceedsInitial_flag",
+    "is_eligible_for_ltv"
+).orderBy("LoanID").show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.12: Build loan composite data_quality_flag ---
+# Combines all five loan flag columns into a single composite column.
+# is_eligible_for_ltv is retained as a separate standalone column.
+# It serves a specific functional purpose at Gold and must remain
+# independently queryable without parsing a flag string.
+
+df_loan = df_loan.withColumn(
+    "loan_data_quality_flag",
+    F.when(
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("PaymentDate_flag"),
+                    F.col("SettledBalance_flag"),
+                    F.col("SettledDPD_flag"),
+                    F.col("BalanceExceedsInitial_flag"),
+                    F.col("InvertedDates_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        F.lit("CLEAN")
+    ).otherwise(
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("PaymentDate_flag"),
+                    F.col("SettledBalance_flag"),
+                    F.col("SettledDPD_flag"),
+                    F.col("BalanceExceedsInitial_flag"),
+                    F.col("InvertedDates_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop(
+    "PaymentDate_flag",
+    "SettledBalance_flag",
+    "SettledDPD_flag",
+    "BalanceExceedsInitial_flag",
+    "InvertedDates_flag"
+)
+
+# Quick check
+print("Step 5.12 complete - Loan composite flag distribution:")
+df_loan.groupBy("loan_data_quality_flag").count().orderBy(
+    "count", ascending=False
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_loan.printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### Phase C: Clean bronze_collateral
+# - **Step 5.13** - Apply ticker symbol corrections and uppercase
+# - **Step 5.14** - Derive and impute Exchange
+# - **Step 5.15** - Flag invalid quantity and pledge value
+# - **Step 5.16** - Set is_eligible_for_ltv
+# - **Step 5.17** - Build collateral data_quality_flag
+
+# MARKDOWN ********************
+
+
+# CELL ********************
+
 demo_silver_debtor_loan_collateral_1 = df_bronze_debtor \
                         .join(df_bronze_loan, on = "DebtorID", how="left") \
                         .join(df_bronze_collateral, on="LoanID", how="left")
@@ -1449,7 +1747,9 @@ print(f"The DataFrame has {total_rows} rows.")
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
 # META }
 
 # CELL ********************
@@ -1470,22 +1770,22 @@ print(f"The DataFrame has {total_rows} rows.")
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
 # META }
 
 # CELL ********************
 
-col_count = 
-
-df_bronze_debtor on DebtorID, ClientID
-df_bronze_loan on LoanID DebtorID
-df_bronze_collatera on CollateralID LoanID DebtorID
+df_bronze_loan.printSchema()
 
 # METADATA ********************
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
 # META }
 
 # CELL ********************
@@ -1507,7 +1807,9 @@ df_mapping.printSchema()
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
 # META }
 
 # CELL ********************
@@ -1518,7 +1820,9 @@ df_officer.printSchema()
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
 # META }
 
 # CELL ********************
