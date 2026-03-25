@@ -655,6 +655,456 @@ print("Section 3 complete. df_silver_collections_officer ready.")
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ---
+# ## Section 4: Clean and Transform `silver_officer_client_mapping`
+# 
+# Produces `silver_officer_client_mapping` from `bronze_officer_client_mapping`.
+# Kept separate because it drives Row Level Security mapping logic independently.
+# SCD Type 2 is applied here because officer assignment history is a business fact
+# that must be preserved at Silver, the system of record for this Lakehouse.
+# 
+# ### Steps
+# - **Step 4.1** - Deduplicate on OfficerID + ClientID keeping latest AssignmentStartDate
+# - **Step 4.2** - Correct IsActive where AssignmentEndDate is in the past
+# - **Step 4.3** - Join officer status and flag inactive officer mappings
+# - **Step 4.4** - Cast data types
+# - **Step 4.5** - Rename AssignmentStartDate and AssignmentEndDate to EffectiveStartDate and EffectiveEndDate
+# - **Step 4.6** - Add IsCurrent boolean
+# - **Step 4.7** - Generate surrogate key mapping_sk
+# - **Step 4.8** - Build composite data_quality_flag
+# - **Step 4.9** - Add audit columns
+# - **Step 4.10** - Select and order final columns
+# - **Step 4.11** - Print summary counts
+
+
+# CELL ********************
+
+# ============================================================
+# SECTION 4: CLEAN AND TRANSFORM silver_officer_client_mapping
+# ============================================================
+
+# Start from the raw Bronze DataFrame
+df_mapping = df_bronze_officer_client_mapping
+
+# --- Step 4.1: Deduplicate on OfficerID + ClientID ---
+# Profiling finding: 3 duplicate composite key combinations.
+# OFF-0001 mapped twice each to CLT-001, CLT-002, and CLT-003.
+# Deduplication rule: keep the record with the latest AssignmentStartDate.
+# If AssignmentStartDate is equal, keep the first record encountered.
+# Removed duplicates are flagged not silently dropped.
+# This must run before SCD Type 2 logic to prevent fabricated history rows.
+
+from pyspark.sql.window import Window
+
+# First add a flag to identify duplicates before removing them
+window_dup = Window.partitionBy("OfficerID", "ClientID").orderBy(
+    F.col("AssignmentStartDate").desc()
+)
+
+df_mapping = df_mapping.withColumn(
+    "row_rank", F.row_number().over(window_dup)
+).withColumn(
+    "IsDuplicate_flag",
+    F.when(F.col("row_rank") == 1, F.lit("CLEAN"))
+    .otherwise(F.lit("DUPLICATE_REMOVED"))
+)
+
+# Count duplicates before removing for logging
+duplicate_count = df_mapping.filter(
+    F.col("IsDuplicate_flag") == "DUPLICATE_REMOVED"
+).count()
+
+# Keep only the first ranked record per OfficerID + ClientID
+df_mapping = df_mapping.filter(F.col("row_rank") == 1).drop("row_rank")
+
+# Quick check
+print(f"Step 4.1 complete - Duplicates removed: {duplicate_count}")
+print(f"Rows after deduplication: {df_mapping.count()}")
+print("\nIsDuplicate_flag distribution:")
+df_mapping.groupBy("IsDuplicate_flag").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.2: Correct IsActive where AssignmentEndDate is in the past ---
+# Profiling finding: 4 rows have AssignmentEndDate populated with a past date
+# but IsActive = True. Logical contradiction.
+# Schema check confirmed IsActive is BOOLEAN and AssignmentEndDate is DATE.
+# Correction rule: where AssignmentEndDate is not null and before today,
+# set IsActive to False and flag as CORRECTED.
+
+df_mapping = df_mapping.withColumn(
+    "IsActive_corrected",
+    F.when(
+        (F.col("AssignmentEndDate").isNotNull()) & (F.col("AssignmentEndDate") < F.current_date()) & (F.col("IsActive") == True),
+        F.lit(False)
+    ).otherwise(
+        F.col("IsActive")
+    )
+).withColumn(
+    "IsActive_flag",
+    F.when(
+        (F.col("AssignmentEndDate").isNotNull()) &
+        (F.col("AssignmentEndDate") < F.current_date()) &
+        (F.col("IsActive") == True),
+        F.lit("CORRECTED")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).drop("IsActive").withColumnRenamed("IsActive_corrected", "IsActive")
+
+# Quick check
+print("Step 4.2 complete - IsActive flag distribution:")
+df_mapping.groupBy("IsActive_flag").count().show()
+
+print("Corrected records:")
+df_mapping.filter(F.col("IsActive_flag") == "CORRECTED").select(
+    "MappingID", "OfficerID", "ClientID", "AssignmentEndDate", "IsActive", "IsActive_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.3: Join officer status and flag inactive officer mappings ---
+# Profiling finding: 9 mapping records belong to Inactive or Suspended officers
+# who still have active portfolio assignments. Operational risk.
+# We join to bronze_collections_officer to bring in current officer status.
+# We flag affected records but do not delete them. Portfolio reassignment
+# is a business decision, not a pipeline decision.
+
+# Bring in only OfficerID and Status from the officer table
+df_officer_status = df_bronze_collections_officer.select(
+    "OfficerID",
+    F.col("Status").alias("officer_status_at_load")
+)
+
+# Left join to preserve all mapping records even if officer lookup fails
+df_mapping = df_mapping.join(
+    df_officer_status,
+    on="OfficerID",
+    how="left"
+)
+
+# Flag mappings where officer is not Active
+df_mapping = df_mapping.withColumn(
+    "OfficerStatus_flag",
+    F.when(
+        F.col("officer_status_at_load") == "Active",
+        F.lit("CLEAN")
+    ).when(
+        F.col("officer_status_at_load").isNull(),
+        F.lit("OFFICER_NOT_FOUND")
+    ).otherwise(
+        F.lit("INACTIVE_OFFICER_MAPPING")
+    )
+)
+
+# Quick check
+print("Step 4.3 complete - OfficerStatus flag distribution:")
+df_mapping.groupBy("officer_status_at_load", "OfficerStatus_flag").count().orderBy("count", ascending=False).show()
+
+print("Inactive officer mapping records:")
+df_mapping.filter(F.col("OfficerStatus_flag") == "INACTIVE_OFFICER_MAPPING").select(
+    "MappingID", "OfficerID", "ClientID", "officer_status_at_load", "OfficerStatus_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.4: Cast data types ---
+# Schema check confirmed all columns are already correctly typed.
+# Fabric inferred types correctly during Bronze Delta write:
+#   AssignmentStartDate - DATE
+#   AssignmentEndDate   - DATE
+#   IsActive            - BOOLEAN
+#   ingestion_timestamp - TIMESTAMP
+# No casting required for this table.
+# Step retained for documentation purposes and pipeline consistency.
+
+print("Step 4.4 complete - No type casting required.")
+print("All column types confirmed correct from schema check.")
+df_mapping.printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.5: Rename date columns to SCD Type 2 convention ---
+# AssignmentStartDate and EffectiveStartDate carry identical meaning here.
+# Renaming aligns this table with the SCD Type 2 pattern used across Silver.
+# No data duplication needed. Rename is the correct and cleaner approach.
+
+df_mapping = df_mapping \
+    .withColumnRenamed("AssignmentStartDate", "EffectiveStartDate") \
+    .withColumnRenamed("AssignmentEndDate", "EffectiveEndDate")
+
+# Quick check - confirm rename worked
+print("Step 4.5 complete - Column rename confirmed:")
+df_mapping.select(
+    "MappingID", "OfficerID", "ClientID",
+    "EffectiveStartDate", "EffectiveEndDate"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.6: Add IsCurrent boolean ---
+# IsCurrent = True where EffectiveEndDate is NULL (assignment still open).
+# IsCurrent = False where EffectiveEndDate is populated (assignment ended).
+# This is a convenience column for downstream filtering.
+# It carries no new information beyond EffectiveEndDate but makes
+# queries and RLS logic simpler and less error prone.
+
+df_mapping = df_mapping.withColumn(
+    "IsCurrent",
+    F.when(F.col("EffectiveEndDate").isNull(), F.lit(True))
+    .otherwise(F.lit(False))
+)
+
+# Quick check - IsCurrent distribution
+print("Step 4.6 complete - IsCurrent distribution:")
+df_mapping.groupBy("IsCurrent").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.7: Generate surrogate key mapping_sk ---
+# The natural key OfficerID + ClientID is not unique in an SCD Type 2 table
+# because multiple versions of the same assignment can exist.
+# The surrogate key uniquely identifies each individual row version.
+# Generated as SHA-256 hash of OfficerID + ClientID + EffectiveStartDate.
+# Deterministic: the same input always produces the same hash.
+# This ensures key stability across pipeline reruns.
+
+df_mapping = df_mapping.withColumn(
+    "mapping_sk",
+    F.sha2(
+        F.concat_ws("|",
+            F.col("OfficerID"),
+            F.col("ClientID"),
+            F.col("EffectiveStartDate").cast("string")
+        ),
+        256
+    )
+)
+
+# Quick check - confirm uniqueness of surrogate key
+total_rows = df_mapping.count()
+distinct_keys = df_mapping.select("mapping_sk").distinct().count()
+
+print("Step 4.7 complete - Surrogate key generation:")
+print(f"  Total rows       : {total_rows}")
+print(f"  Distinct keys    : {distinct_keys}")
+print(f"  Keys unique      : {total_rows == distinct_keys}")
+print("\nSample surrogate keys:")
+df_mapping.select(
+    "MappingID", "OfficerID", "ClientID", "EffectiveStartDate", "mapping_sk"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.8: Build composite data_quality_flag column ---
+# Combines IsDuplicate_flag, IsActive_flag, and OfficerStatus_flag
+# into a single composite column following the same pattern as Section 3.
+# Individual flag columns are dropped after the composite is built.
+
+df_mapping = df_mapping.withColumn(
+    "data_quality_flag",
+    F.when(
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("IsDuplicate_flag"),
+                    F.col("IsActive_flag"),
+                    F.col("OfficerStatus_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        F.lit("CLEAN")
+    ).otherwise(
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("IsDuplicate_flag"),
+                    F.col("IsActive_flag"),
+                    F.col("OfficerStatus_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop("IsDuplicate_flag", "IsActive_flag", "OfficerStatus_flag")
+
+# Quick check - composite flag distribution
+print("Step 4.8 complete - Composite data_quality_flag distribution:")
+df_mapping.groupBy("data_quality_flag").count().orderBy("count", ascending=False).show(truncate=False)
+
+print("Flagged records:")
+df_mapping.filter(F.col("data_quality_flag") != "CLEAN").select(
+    "MappingID", "OfficerID", "ClientID", "data_quality_flag"
+).orderBy("MappingID").show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.9: Add audit columns ---
+# silver_ingestion_timestamp and pipeline_run_id defined in Section 1.
+# Applied consistently to every Silver table in this notebook.
+
+df_mapping = df_mapping.withColumn(
+    "silver_ingestion_timestamp", F.lit(SILVER_INGESTION_TIMESTAMP).cast(TimestampType())
+).withColumn(
+    "pipeline_run_id", F.lit(PIPELINE_RUN_ID)
+)
+
+print("Step 4.9 complete - Audit columns added.")
+print(f"  pipeline_run_id            : {PIPELINE_RUN_ID}")
+print(f"  silver_ingestion_timestamp : {SILVER_INGESTION_TIMESTAMP}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.10: Select and order final columns ---
+# Explicit column selection ensures no intermediate helper columns
+# leak into the Silver table.
+# Column order convention:
+#   Surrogate key first, natural keys, business columns,
+#   SCD Type 2 columns, derived columns, flag column, audit columns last.
+
+df_silver_officer_client_mapping = df_mapping.select(
+    "mapping_sk",
+    "MappingID",
+    "OfficerID",
+    "ClientID",
+    "Region",
+    "IsActive",
+    "officer_status_at_load",
+    "EffectiveStartDate",
+    "EffectiveEndDate",
+    "IsCurrent",
+    "data_quality_flag",
+    "ingestion_timestamp",
+    "source_system",
+    "pipeline_run_id",
+    "silver_ingestion_timestamp"
+)
+
+print("Step 4.10 complete - Final column selection confirmed.")
+print(f"Columns in df_silver_officer_client_mapping: {df_silver_officer_client_mapping.columns}")
+print(f"Row count: {df_silver_officer_client_mapping.count()}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 4.11: Print summary counts ---
+
+total         = df_silver_officer_client_mapping.count()
+clean         = df_silver_officer_client_mapping.filter(F.col("data_quality_flag") == "CLEAN").count()
+flagged       = df_silver_officer_client_mapping.filter(F.col("data_quality_flag") != "CLEAN").count()
+corrected     = df_silver_officer_client_mapping.filter(F.col("data_quality_flag").contains("CORRECTED")).count()
+inactive      = df_silver_officer_client_mapping.filter(F.col("data_quality_flag").contains("INACTIVE_OFFICER_MAPPING")).count()
+current       = df_silver_officer_client_mapping.filter(F.col("IsCurrent") == True).count()
+not_current   = df_silver_officer_client_mapping.filter(F.col("IsCurrent") == False).count()
+
+print("=" * 55)
+print("silver_officer_client_mapping SUMMARY")
+print("=" * 55)
+print(f"  Total records              : {total}")
+print(f"  Clean records              : {clean}")
+print(f"  Flagged records            : {flagged}")
+print(f"  IsActive corrected         : {corrected}")
+print(f"  Inactive officer mappings  : {inactive}")
+print(f"  Current assignments        : {current}")
+print(f"  Closed assignments         : {not_current}")
+print(f"  Duplicates removed         : {duplicate_count}")
+print("=" * 55)
+print("Section 4 complete. df_silver_officer_client_mapping ready.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+
+# CELL ********************
+
+df_mapping.printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # CELL ********************
 
 df_officer.printSchema()
