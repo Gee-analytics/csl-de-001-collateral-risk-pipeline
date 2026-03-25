@@ -1093,6 +1093,411 @@ print("Section 4 complete. df_silver_officer_client_mapping ready.")
 
 # MARKDOWN ********************
 
+# ---
+# ## Section 5: Clean and Transform `silver_debtor_loan_collateral`
+# 
+# Produces `silver_debtor_loan_collateral` by cleaning bronze_debtor, bronze_loan,
+# and bronze_collateral individually then joining them into a single unified table.
+# 
+# Grain: one row per collateral asset per loan per debtor.
+# Expected row count: 300 (driven by bronze_collateral as the most granular table).
+# 
+# SCD Type 2 is applied for LoanStatus changes to preserve loan status history
+# for audit and trend analysis in a financial services context.
+# 
+# ### Phase A: Clean bronze_debtor
+# - **Step 5.1** - Pad 10-digit NationalIDs with leading zero
+# - **Step 5.2** - Flag duplicate NationalIDs
+# - **Step 5.3** - Flag inactive officer assignments
+# - **Step 5.4** - Flag missing emails
+# - **Step 5.5** - SHA-256 hash NationalID
+# - **Step 5.6** - Build debtor data_quality_flag
+# 
+# ### Phase B: Clean bronze_loan
+# - **Step 5.7** - Flag payment before loan start date
+# - **Step 5.8** - Flag settled loans with balance anomalies
+# - **Step 5.9** - Flag balance exceeding initial loan amount
+# - **Step 5.10** - Flag inverted loan dates
+# - **Step 5.11** - Set is_eligible_for_ltv
+# - **Step 5.12** - Build loan data_quality_flag
+# 
+# ### Phase C: Clean bronze_collateral
+# - **Step 5.13** - Apply ticker symbol corrections and uppercase
+# - **Step 5.14** - Derive and impute Exchange
+# - **Step 5.15** - Flag invalid quantity and pledge value
+# - **Step 5.16** - Set is_eligible_for_ltv
+# - **Step 5.17** - Build collateral data_quality_flag
+# 
+# ### Join and SCD Type 2
+# - **Step 5.18** - Three way join
+# - **Step 5.19** - Generate surrogate key
+# - **Step 5.20** - Add SCD Type 2 columns
+# - **Step 5.21** - Add audit columns
+# - **Step 5.22** - Select and order final columns
+# - **Step 5.23** - Print summary counts
+
+
+# CELL ********************
+
+# ============================================================
+# SECTION 5: CLEAN AND TRANSFORM silver_debtor_loan_collateral
+# ============================================================
+
+# --- PHASE A: CLEAN bronze_debtor ---
+
+# Start from the raw Bronze DataFrame
+df_debtor = df_bronze_debtor
+
+# --- Step 5.1: Pad 10-digit NationalIDs with leading zero ---
+# Profiling finding: 10 NationalIDs are 10 digits instead of 11.
+# Nigerian NIN is 11 digits. Leading zero was stripped during source export.
+# F.lpad pads the left side of the string with zeros to reach length 11.
+# Records already at 11 digits are untouched by lpad.
+
+df_debtor = df_debtor.withColumn(
+    "NationalID_flag",
+    F.when(
+        F.length(F.col("NationalID")) == 10,
+        F.lit("NATIONALID_PADDED")
+    ).when(
+        F.col("NationalID").isNull(),
+        F.lit("NATIONALID_MISSING")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).withColumn(
+    "NationalID",
+    F.when(
+        F.length(F.col("NationalID")) == 10,
+        F.lpad(F.col("NationalID"), 11, "0")
+    ).otherwise(
+        F.col("NationalID")
+    )
+)
+
+# Quick check
+print("Step 5.1 complete - NationalID flag distribution:")
+df_debtor.groupBy("NationalID_flag").count().show()
+
+print("Sample padded records:")
+df_debtor.filter(F.col("NationalID_flag") == "NATIONALID_PADDED").select(
+    "DebtorID", "NationalID", "NationalID_flag"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.2: Flag duplicate NationalIDs ---
+# Profiling finding: 4 NationalIDs each appear on 2 different DebtorIDs.
+# Total affected rows: 8.
+# We cannot auto-deduplicate here. Both records may represent real individuals.
+# A data entry error at source means human review is required.
+# All affected rows are flagged and retained for escalation.
+
+window_nationalid = Window.partitionBy("NationalID")
+
+df_debtor = df_debtor.withColumn(
+    "nationalid_count",
+    F.count("NationalID").over(window_nationalid)
+).withColumn(
+    "DuplicateNationalID_flag",
+    F.when(
+        F.col("nationalid_count") > 1,
+        F.lit("DUPLICATE_NATIONAL_ID")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).drop("nationalid_count")
+
+# Quick check
+print("Step 5.2 complete - DuplicateNationalID flag distribution:")
+df_debtor.groupBy("DuplicateNationalID_flag").count().show()
+
+print("Duplicate NationalID records:")
+df_debtor.filter(F.col("DuplicateNationalID_flag") == "DUPLICATE_NATIONAL_ID").select(
+    "DebtorID", "NationalID", "DuplicateNationalID_flag"
+).orderBy("NationalID").show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.3: Flag inactive officer assignments ---
+# Profiling finding: 41 debtors assigned to Inactive or Suspended officers.
+# These debtors have no active officer managing their recovery.
+# Operational risk that must be visible in Silver.
+# We join to bronze_collections_officer to bring in current officer status.
+# Flag affected records but do not delete or reassign them.
+# Reassignment is a business decision not a pipeline decision.
+
+df_officer_status_debtor = df_bronze_collections_officer.select(
+    F.col("OfficerID").alias("AssignedOfficerID"),
+    F.col("Status").alias("assigned_officer_status")
+)
+
+df_debtor = df_debtor.join( df_officer_status_debtor,
+    on="AssignedOfficerID",
+    how="left"
+)
+
+df_debtor = df_debtor.withColumn(
+    "OfficerAssignment_flag",
+    F.when(
+        F.col("assigned_officer_status") == "Active",
+        F.lit("CLEAN")
+    ).when(
+        F.col("assigned_officer_status").isNull(),
+        F.lit("OFFICER_NOT_FOUND")
+    ).otherwise(
+        F.lit("INACTIVE_OFFICER_ASSIGNMENT")
+    )
+)
+
+# Quick check
+print("Step 5.3 complete - OfficerAssignment flag distribution:")
+df_debtor.groupBy(
+    "assigned_officer_status", "OfficerAssignment_flag"
+).count().orderBy("count", ascending=False).show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.4: Flag missing email addresses ---
+# Profiling finding: 3 NULL EmailAddress values.
+# Email is a contact field not an identifier.
+# Missing email reduces outreach options but does not invalidate the record.
+# NULL is retained. Record is flagged for completeness tracking.
+
+df_debtor = df_debtor.withColumn(
+    "Email_flag",
+    F.when(
+        F.col("EmailAddress").isNull(),
+        F.lit("MISSING_EMAIL")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 5.4 complete - Email flag distribution:")
+df_debtor.groupBy("Email_flag").count().show()
+
+print("Missing email records:")
+df_debtor.filter(F.col("Email_flag") == "MISSING_EMAIL").select(
+    "DebtorID", "FullName", "EmailAddress", "Email_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.5: SHA-256 hash NationalID ---
+# NationalID is sensitive PII with no dashboard business purpose.
+# No collections officer needs to see a debtor's NIN to perform recovery.
+# Hashing at Silver is correct and proportionate.
+# One-way SHA-256 hash. Original value is not recoverable from the hash.
+# PhoneNumber, EmailAddress, ResidentialAddress are NOT hashed here.
+# Those fields are operational contact fields protected at the Power BI
+# semantic model level via Object Level Security.
+
+df_debtor = df_debtor.withColumn(
+    "NationalID",
+    F.sha2(F.col("NationalID").cast("string"), 256)
+)
+
+# Quick check - confirm hashing worked
+print("Step 5.5 complete - NationalID hashing confirmed:")
+df_debtor.select("DebtorID", "NationalID").show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.6: Build debtor composite data_quality_flag ---
+# Combines NationalID_flag, DuplicateNationalID_flag,
+# OfficerAssignment_flag, and Email_flag into a single composite column.
+# Individual flag columns dropped after composite is built.
+
+df_debtor = df_debtor.withColumn(
+    "debtor_data_quality_flag",
+    F.when(
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("NationalID_flag"),
+                    F.col("DuplicateNationalID_flag"),
+                    F.col("OfficerAssignment_flag"),
+                    F.col("Email_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        F.lit("CLEAN")
+    ).otherwise(
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("NationalID_flag"),
+                    F.col("DuplicateNationalID_flag"),
+                    F.col("OfficerAssignment_flag"),
+                    F.col("Email_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop(
+    "NationalID_flag",
+    "DuplicateNationalID_flag",
+    "OfficerAssignment_flag",
+    "Email_flag"
+)
+
+# Quick check
+print("Step 5.6 complete - Debtor composite flag distribution:")
+df_debtor.groupBy("debtor_data_quality_flag").count().orderBy(
+    "count", ascending=False
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_debtor.filter(
+    F.col("debtor_data_quality_flag").contains("DUPLICATE_NATIONAL_ID")
+).select(
+    "DebtorID", "assigned_officer_status", "debtor_data_quality_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+demo_silver_debtor_loan_collateral_1 = df_bronze_debtor \
+                        .join(df_bronze_loan, on = "DebtorID", how="left") \
+                        .join(df_bronze_collateral, on="LoanID", how="left")
+
+
+# demo_silver_debtor_loan_collateral_1.show()
+
+
+total_rows = demo_silver_debtor_loan_collateral_1.count()
+
+print(f"The DataFrame has {total_rows} rows.")
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+demo_silver_debtor_loan_collateral_1 = df_bronze_debtor \
+                        .join(df_bronze_loan, on = "DebtorID", how="left") \
+                        .join(df_bronze_collateral, on="LoanID", how="left")
+
+
+# demo_silver_debtor_loan_collateral_1.show()
+
+
+total_rows = demo_silver_debtor_loan_collateral_1.count()
+
+print(f"The DataFrame has {total_rows} rows.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+demo_silver_debtor_loan_collateral_2 = df_bronze_debtor \
+                        .join(df_bronze_loan, on = "DebtorID", how="inner") \
+                        .join(df_bronze_collateral, on="LoanID", how="left")
+
+
+# demo_silver_debtor_loan_collateral_1.show()
+
+
+total_rows = demo_silver_debtor_loan_collateral_2.count()
+
+print(f"The DataFrame has {total_rows} rows.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+col_count = 
+
+df_bronze_debtor on DebtorID, ClientID
+df_bronze_loan on LoanID DebtorID
+df_bronze_collatera on CollateralID LoanID DebtorID
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_bronze_collateral.printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
 
 # CELL ********************
 
