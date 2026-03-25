@@ -1706,9 +1706,398 @@ df_loan.groupBy("loan_data_quality_flag").count().orderBy(
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ### Phase C: Clean bronze_collateral
+# - **Step 5.13** - Apply ticker symbol corrections and uppercase
+# - **Step 5.14** - Derive and impute Exchange
+# - **Step 5.15** - Flag invalid quantity and pledge value
+# - **Step 5.16** - Set is_eligible_for_ltv
+# - **Step 5.17** - Build collateral data_quality_flag
+
 # CELL ********************
 
-df_loan.printSchema()
+# --- PHASE C: CLEAN bronze_collateral ---
+
+# Start from the raw Bronze DataFrame
+df_collateral = df_bronze_collateral
+
+# --- Baseline normalisation: trim all STRING columns ---
+# Trailing and leading whitespace is a systemic data entry risk
+# across any text field, not just TickerSymbol.
+# Applying trim unconditionally to all STRING columns before any
+# other transformation ensures no downstream logic is tripped by
+# invisible whitespace characters.
+# This is a defensive baseline step applied before all other cleaning.
+
+string_columns = [
+    field.name for field in df_collateral.schema.fields
+    if field.dataType.typeName() == "string"
+]
+
+for col_name in string_columns:
+    df_collateral = df_collateral.withColumn(
+        col_name, F.trim(F.col(col_name))
+    )
+
+print(f"Baseline trim applied to {len(string_columns)} STRING columns:")
+print(string_columns)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- PHASE C: CLEAN bronze_collateral ---
+
+# Start from the raw Bronze DataFrame
+df_collateral = df_bronze_collateral
+
+# --- Step 5.13: Apply ticker symbol corrections and uppercase ---
+# Profiling finding: Four distinct ticker issues found.
+# TickerSymbol is the join key to bronze_market_prices.
+# A wrong ticker produces a silent null join at Gold.
+# Fix: trim and uppercase first, then apply explicit corrections,
+# then flag based on what changed.
+
+# Step 1: Trim and uppercase all tickers first
+# This ensures explicit corrections match regardless of original case
+df_collateral = df_collateral.withColumn(
+    "TickerSymbol_original",
+    F.col("TickerSymbol")
+).withColumn(
+    "TickerSymbol",
+    F.upper(F.trim(F.col("TickerSymbol")))
+)
+
+# Step 2: Apply explicit ticker corrections on uppercased values
+df_collateral = df_collateral.withColumn(
+    "TickerSymbol",
+    F.when(
+        F.col("TickerSymbol") == "APPLE INC",
+        F.lit("AAPL")
+    ).when(
+        F.col("TickerSymbol") == "BTC/USD",
+        F.lit("BTC-USD")
+    ).otherwise(
+        F.col("TickerSymbol")
+    )
+).withColumn(
+    # Fix AssetType for BTC-USD and NVDA records
+    "AssetType",
+    F.when(
+        F.col("TickerSymbol") == "BTC-USD",
+        F.lit("Crypto")
+    ).when(
+        (F.col("TickerSymbol") == "NVDA") &
+        (F.col("AssetType") == "Crypto"),
+        F.lit("Stock")
+    ).otherwise(
+        F.col("AssetType")
+    )
+).withColumn(
+    # Fix Exchange for BTC-USD and NVDA records
+    "Exchange",
+    F.when(
+        F.col("TickerSymbol") == "BTC-USD",
+        F.lit("CRYPTO")
+    ).when(
+        (F.col("TickerSymbol") == "NVDA") &
+        (F.col("Exchange") == "CRYPTO"),
+        F.lit("NASDAQ")
+    ).otherwise(
+        F.col("Exchange")
+    )
+)
+
+# Step 3: Build ticker flag by comparing original to corrected value
+df_collateral = df_collateral.withColumn(
+    "TickerSymbol_flag",
+    F.when(
+        F.upper(F.trim(F.col("TickerSymbol_original"))) == "APPLE INC",
+        F.lit("TICKER_CORRECTED")
+    ).when(
+        F.upper(F.trim(F.col("TickerSymbol_original"))) == "BTC/USD",
+        F.lit("TICKER_AND_ASSET_TYPE_CORRECTED")
+    ).when(
+        (F.col("TickerSymbol") == "NVDA") &
+        (F.upper(F.trim(F.col("TickerSymbol_original"))) == "NVDA") &
+        (F.col("AssetType") == "Stock"),
+        F.lit("ASSET_TYPE_CORRECTED")
+    ).when(
+        F.col("TickerSymbol_original") != F.upper(F.trim(F.col("TickerSymbol_original"))),
+        F.lit("TICKER_UPPERCASED")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).drop("TickerSymbol_original")
+
+# Quick check
+print("Step 5.13 complete - TickerSymbol flag distribution:")
+df_collateral.groupBy("TickerSymbol_flag").count().orderBy(
+    "count", ascending=False
+).show()
+
+print("Corrected ticker records:")
+df_collateral.filter(
+    F.col("TickerSymbol_flag") != "CLEAN"
+).select(
+    "CollateralID", "TickerSymbol", "AssetType",
+    "Exchange", "TickerSymbol_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.14: Derive and impute Exchange from TickerSymbol ---
+# Profiling finding: 6 NULL Exchange values across known tickers.
+# Additional diagnostic finding: 44 NVDA records incorrectly mapped to NYSE.
+# Additional diagnostic finding: BTC/USD records had CRYPTO on NYSE.
+# Strategy: capture original Exchange first, derive correct value,
+# compare original to correct to build flag, then replace.
+
+ticker_exchange_map = {
+    "AAPL"   : "NYSE",
+    "TSLA"   : "NASDAQ",
+    "GOOGL"  : "NASDAQ",
+    "MSFT"   : "NASDAQ",
+    "AMZN"   : "NASDAQ",
+    "NVDA"   : "NASDAQ",
+    "BTC-USD": "CRYPTO"
+}
+
+# Step 1: Capture original Exchange before any modification
+df_collateral = df_collateral.withColumn(
+    "Exchange_original", F.col("Exchange")
+)
+
+# Step 2: Derive the correct exchange into a helper column
+correct_exchange = F.col("Exchange")
+for ticker, exchange in ticker_exchange_map.items():
+    correct_exchange = F.when(
+        F.col("TickerSymbol") == ticker,
+        F.lit(exchange)
+    ).otherwise(correct_exchange)
+
+df_collateral = df_collateral.withColumn(
+    "Exchange_correct", correct_exchange
+)
+
+# Step 3: Replace Exchange with correct value
+df_collateral = df_collateral.withColumn(
+    "Exchange", F.col("Exchange_correct")
+).drop("Exchange_correct")
+
+# Step 4: Build flag by comparing Exchange_original to corrected Exchange
+# Now the comparison is between the true original and the new value
+df_collateral = df_collateral.withColumn(
+    "Exchange_flag",
+    F.when(
+        F.col("Exchange_original").isNull(),
+        F.lit("EXCHANGE_DERIVED")
+    ).when(
+        F.col("Exchange_original") != F.col("Exchange"),
+        F.lit("EXCHANGE_CORRECTED")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).drop("Exchange_original")
+
+# Quick check
+print("Step 5.14 complete - Exchange flag distribution:")
+df_collateral.groupBy("Exchange_flag").count().orderBy(
+    "count", ascending=False
+).show()
+
+print("Exchange distribution after correction:")
+df_collateral.groupBy("Exchange").count().orderBy(
+    "count", ascending=False
+).show()
+
+print("NVDA Exchange distribution after correction:")
+df_collateral.filter(
+    F.col("TickerSymbol") == "NVDA"
+).groupBy("Exchange").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_bronze_collateral.groupBy("TickerSymbol", "Exchange").count().orderBy(
+    "TickerSymbol", "Exchange"
+).show(50, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.15: Flag invalid quantity and pledge value ---
+# Profiling finding 1: 4 rows with zero or negative QuantityHeld.
+# Zero or negative quantity produces meaningless collateral value in LTV.
+# Profiling finding 2: 5 rows with zero or negative CollateralValueAtPledge.
+# Pledge value is not directly in LTV formula but a zero or negative value
+# indicates a fundamentally broken record requiring investigation.
+# Both issues retain the original value and flag for escalation.
+
+df_collateral = df_collateral.withColumn(
+    "QuantityHeld_flag",
+    F.when(
+        F.col("QuantityHeld") <= 0,
+        F.lit("INVALID_QUANTITY")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+).withColumn(
+    "PledgeValue_flag",
+    F.when(
+        F.col("CollateralValueAtPledge") <= 0,
+        F.lit("INVALID_PLEDGE_VALUE")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 5.15 complete - QuantityHeld flag distribution:")
+df_collateral.groupBy("QuantityHeld_flag").count().show()
+
+print("PledgeValue flag distribution:")
+df_collateral.groupBy("PledgeValue_flag").count().show()
+
+print("Invalid quantity records:")
+df_collateral.filter(
+    F.col("QuantityHeld_flag") == "INVALID_QUANTITY"
+).select(
+    "CollateralID", "TickerSymbol", "QuantityHeld", "QuantityHeld_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.16: Set is_eligible_for_ltv for collateral records ---
+# The Gold layer uses this boolean to filter records before LTV computation.
+# Records remain in Silver fully visible. This is a quarantine signal,
+# not an exclusion mechanism. The original values are preserved.
+#
+# FALSE conditions for collateral records:
+#   1. QuantityHeld <= 0
+#      Zero or negative quantity produces meaningless collateral value.
+#   2. CollateralValueAtPledge <= 0
+#      Indicates a fundamentally broken record requiring investigation.
+#
+# Ticker corrections applied in Steps 5.13 and 5.14 do NOT trigger FALSE.
+# Those records were corrected and are now eligible for LTV calculation.
+
+df_collateral = df_collateral.withColumn(
+    "is_eligible_for_ltv",
+    F.when(
+        (F.col("QuantityHeld_flag") == "INVALID_QUANTITY") |
+        (F.col("PledgeValue_flag") == "INVALID_PLEDGE_VALUE"),
+        F.lit(False)
+    ).otherwise(
+        F.lit(True)
+    )
+)
+
+# Quick check
+print("Step 5.16 complete - is_eligible_for_ltv distribution:")
+df_collateral.groupBy("is_eligible_for_ltv").count().show()
+
+print("Ineligible collateral records:")
+df_collateral.filter(
+    F.col("is_eligible_for_ltv") == False
+).select(
+    "CollateralID",
+    "TickerSymbol",
+    "QuantityHeld",
+    "CollateralValueAtPledge",
+    "QuantityHeld_flag",
+    "PledgeValue_flag",
+    "is_eligible_for_ltv"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- Step 5.17: Build collateral composite data_quality_flag ---
+# Combines TickerSymbol_flag, Exchange_flag, QuantityHeld_flag,
+# and PledgeValue_flag into a single composite column.
+# is_eligible_for_ltv is retained as a separate standalone column.
+# Individual flag columns dropped after composite is built.
+
+df_collateral = df_collateral.withColumn(
+    "collateral_data_quality_flag",
+    F.when(
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("TickerSymbol_flag"),
+                    F.col("Exchange_flag"),
+                    F.col("QuantityHeld_flag"),
+                    F.col("PledgeValue_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        F.lit("CLEAN")
+    ).otherwise(
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("TickerSymbol_flag"),
+                    F.col("Exchange_flag"),
+                    F.col("QuantityHeld_flag"),
+                    F.col("PledgeValue_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop(
+    "TickerSymbol_flag",
+    "Exchange_flag",
+    "QuantityHeld_flag",
+    "PledgeValue_flag"
+)
+
+# Quick check
+print("Step 5.17 complete - Collateral composite flag distribution:")
+df_collateral.groupBy("collateral_data_quality_flag").count().orderBy(
+    "count", ascending=False
+).show(truncate=False)
 
 # METADATA ********************
 
@@ -1719,12 +2108,107 @@ df_loan.printSchema()
 
 # MARKDOWN ********************
 
-# ### Phase C: Clean bronze_collateral
-# - **Step 5.13** - Apply ticker symbol corrections and uppercase
-# - **Step 5.14** - Derive and impute Exchange
-# - **Step 5.15** - Flag invalid quantity and pledge value
-# - **Step 5.16** - Set is_eligible_for_ltv
-# - **Step 5.17** - Build collateral data_quality_flag
+# ### Join and SCD Type 2
+# - **Step 5.18** - Three way join
+# - **Step 5.19** - Generate surrogate key
+# - **Step 5.20** - Add SCD Type 2 columns
+# - **Step 5.21** - Add audit columns
+# - **Step 5.22** - Select and order final columns
+# - **Step 5.23** - Print summary counts
+
+# CELL ********************
+
+filtered_df_collateral = df_collateral.filter(
+    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange") == "NYSE")) |
+    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange").isNull()))
+).groupBy("Exchange").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+df_collateral.filter(
+    F.col("Exchange_flag") == "EXCHANGE_CORRECTED"
+).groupBy("TickerSymbol", "Exchange").count().orderBy(
+    "count", ascending=False
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+filtered_df_collateral = df_collateral.filter(
+    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange") == "NYSE")) |
+    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange").isNull()))
+).groupBy("Exchange").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+df_collateral.filter(
+    F.col("TickerSymbol") == "NVDA"
+).groupBy("Exchange").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+df_bronze_collateral.printSchema()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+df_bronze_collateral.filter(
+    F.col("CollateralID") == "COL-0002"
+).select(
+    "CollateralID",
+    F.length("TickerSymbol").alias("ticker_length"),
+    "TickerSymbol"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
 
 # MARKDOWN ********************
 
