@@ -2545,20 +2545,116 @@ print("Section 5 complete. df_silver_debtor_loan_collateral ready.")
 # META   "editable": true
 # META }
 
+# MARKDOWN ********************
+
+# ---
+# 
+# ## Section 6: Clean and Transform `silver_bank_balance_update`
+# 
+# Produces `silver_bank_balance_update` from `bronze_bank_balance_update`.
+# Kept separate because it arrives from a different source (Amazon S3 via client
+# bank daily drops) and serves a specific purpose at Gold: providing the
+# authoritative CurrentOutstandingBalance for LTV calculation.
+# 
+# Per the formal business rule, S3 is the system of record for
+# CurrentOutstandingBalance, LastPaymentDate, and LastPaymentAmount.
+# SQL Server loan table values are the fallback only.
+# 
+# ### Steps
+# - **Step 6.1** - Deduplicate on LoanID + ReportingDate
+# - **Step 6.2** - Resolve string literal null in AccountStatus
+# - **Step 6.3** - Standardise AccountStatus to controlled vocabulary
+# - **Step 6.4** - Flag NULL CurrentOutstandingBalance
+# - **Step 6.5** - Cast ReportingDate and LastPaymentDate from TIMESTAMP to DATE
+# - **Step 6.6** - Cast CurrentOutstandingBalance and LastPaymentAmount from DOUBLE to DECIMAL
+# - **Step 6.7** - Set is_eligible_for_ltv
+# - **Step 6.8** - Build composite data_quality_flag
+# - **Step 6.9** - Add audit columns
+# - **Step 6.10** - Select and order final columns
+# - **Step 6.11** - Print summary counts
+
+
+# MARKDOWN ********************
+
+# 
+# ### **Step 6.1** - Deduplicate on LoanID + ReportingDate
+
+
 # CELL ********************
 
-debtor_cols = set(df_debtor.columns)
-loan_cols = set(df_loan.columns)
-collateral_cols = set(df_collateral.columns)
+# ============================================================
+# SECTION 6: CLEAN AND TRANSFORM silver_bank_balance_update
+# ============================================================
 
-print("Columns in both debtor and loan:")
-print(debtor_cols & loan_cols)
+# Start from the raw Bronze DataFrame
+df_balance = df_bronze_bank_balance_update
 
-# print("\nColumns in both loan and collateral:")
-# print(loan_cols & collateral_cols)
+# --- Step 6.1: Deduplicate on LoanID + ReportingDate ---
+# Profiling finding: 24 duplicate composite key combinations.
+# Full row duplicates caused by client bank dropping the same file twice.
+# Since rows are fully identical, any row can be retained.
+# We keep the first ranked record per LoanID + ReportingDate combination.
+# Duplicate count captured before removal for pipeline metadata logging.
 
-# print("\nColumns in both debtor and collateral:")
-# print(debtor_cols & collateral_cols)
+window_dup = Window.partitionBy("LoanID", "ReportingDate").orderBy(
+    F.col("ingestion_timestamp").desc()
+)
+
+df_balance = df_balance.withColumn(
+    "row_rank", F.row_number().over(window_dup)
+).withColumn(
+    "IsDuplicate_flag",
+    F.when(F.col("row_rank") == 1, F.lit("CLEAN"))
+    .otherwise(F.lit("DUPLICATE_REMOVED"))
+)
+
+duplicate_count_balance = df_balance.filter(
+    F.col("IsDuplicate_flag") == "DUPLICATE_REMOVED"
+).count()
+
+df_balance = df_balance.filter(F.col("row_rank") == 1).drop("row_rank")
+
+print(f"Step 6.1 complete - Duplicates removed: {duplicate_count_balance}")
+print(f"Rows after deduplication: {df_balance.count()}")
+print("\nIsDuplicate_flag distribution:")
+df_balance.groupBy("IsDuplicate_flag").count().show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.2** - Resolve string literal null in AccountStatus
+
+
+# CELL ********************
+
+# --- Step 6.2: Resolve string literal null in AccountStatus ---
+# Profiling finding: rows where AccountStatus contains the string "null"
+# rather than a database NULL. Source system wrote the word null as a
+# string value instead of leaving the field empty.
+# This passes NULL checks silently and must be caught explicitly.
+# Replace string "null" with actual NULL so downstream checks work correctly.
+
+df_balance = df_balance.withColumn(
+    "AccountStatus",
+    F.when(
+        F.lower(F.col("AccountStatus")) == "null",
+        F.lit(None).cast(StringType())
+    ).otherwise(
+        F.col("AccountStatus")
+    )
+)
+
+# Quick check
+print("Step 6.2 complete - AccountStatus NULL check after string literal resolution:")
+df_balance.groupBy(
+    F.when(F.col("AccountStatus").isNull(), "NULL").otherwise("NOT NULL").alias("AccountStatus_null_check")
+).count().show()
 
 # METADATA ********************
 
@@ -2569,44 +2665,68 @@ print(debtor_cols & loan_cols)
 # META   "editable": true
 # META }
 
-# CELL ********************
+# MARKDOWN ********************
 
-print("Loan columns with eligibility:")
-print([c for c in df_loan.columns if "eligible" in c.lower()])
+# ### **Step 6.3** - Standardise AccountStatus to controlled vocabulary
 
-print("Collateral columns with eligibility:")
-print([c for c in df_collateral.columns if "eligible" in c.lower()])
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
 
 # CELL ********************
 
-filtered_df_collateral = df_collateral.filter(
-    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange") == "NYSE")) |
-    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange").isNull()))
-).groupBy("Exchange").count().show()
+# --- Step 6.3: Standardise AccountStatus to controlled vocabulary ---
+# Profiling findings:
+#   WRITTEN_OFF -> Written-Off (inconsistent formatting)
+#   Suspended   -> flag as SUSPECT_ACCOUNT_STATUS (ambiguous meaning)
+#   UNKNOWN     -> flag as UNKNOWN_ACCOUNT_STATUS
+#   NULL        -> flag as UNKNOWN_ACCOUNT_STATUS (resolved from Step 6.2)
+#   Watch       -> valid, added to domain during profiling
+#
+# Valid domain: NPL, Watch, Performing, Written-Off, Unknown
+# Standardisation map applied first, then validation against valid domain.
 
-# METADATA ********************
+# Step 1: Apply standardisation map
+status_map = {
+    "WRITTEN_OFF" : "Written-Off",
+    "written_off" : "Written-Off",
+    "NPL"         : "NPL",
+    "Watch"       : "Watch",
+    "Performing"  : "Performing",
+    "Unknown"     : "Unknown",
+    "UNKNOWN"     : "Unknown"
+}
 
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
+standardised_status = F.col("AccountStatus")
+for raw, standard in status_map.items():
+    standardised_status = F.when(
+        F.col("AccountStatus") == raw,
+        F.lit(standard)
+    ).otherwise(standardised_status)
 
-# CELL ********************
+df_balance = df_balance.withColumn(
+    "AccountStatus", standardised_status
+)
 
-df_collateral.filter(
-    F.col("Exchange_flag") == "EXCHANGE_CORRECTED"
-).groupBy("TickerSymbol", "Exchange").count().orderBy(
+# Step 2: Validate against valid domain and flag
+VALID_ACCOUNT_STATUSES = ["NPL", "Watch", "Performing", "Written-Off", "Unknown"]
+
+df_balance = df_balance.withColumn(
+    "AccountStatus_flag",
+    F.when(
+        F.col("AccountStatus").isNull(),
+        F.lit("UNKNOWN_ACCOUNT_STATUS")
+    ).when(
+        F.col("AccountStatus") == "Suspended",
+        F.lit("SUSPECT_ACCOUNT_STATUS")
+    ).when(
+        F.col("AccountStatus").isin(VALID_ACCOUNT_STATUSES),
+        F.lit("CLEAN")
+    ).otherwise(
+        F.lit("INVALID_ACCOUNT_STATUS")
+    )
+)
+
+# Quick check
+print("Step 6.3 complete - AccountStatus distribution after standardisation:")
+df_balance.groupBy("AccountStatus", "AccountStatus_flag").count().orderBy(
     "count", ascending=False
 ).show(truncate=False)
 
@@ -2615,62 +2735,224 @@ df_collateral.filter(
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
 # META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.4** - Flag NULL CurrentOutstandingBalance
+
 
 # CELL ********************
 
-filtered_df_collateral = df_collateral.filter(
-    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange") == "NYSE")) |
-    ((F.col("TickerSymbol") == "NVDA") & (F.col("Exchange").isNull()))
-).groupBy("Exchange").count().show()
+# --- Step 6.4: Flag NULL CurrentOutstandingBalance ---
+# Profiling finding: NULL CurrentOutstandingBalance values found.
+# This is the authoritative balance field per the S3 system of record
+# business rule. A NULL means no authoritative balance exists for that
+# loan on that reporting date.
+# Fallback to SQL Server OutstandingBalance is applied at Gold layer
+# when the two sources are joined.
+# We flag here so Gold knows which records require the fallback.
+
+df_balance = df_balance.withColumn(
+    "Balance_flag",
+    F.when(
+        F.col("CurrentOutstandingBalance").isNull(),
+        F.lit("BALANCE_UNAVAILABLE")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 6.4 complete - Balance flag distribution:")
+df_balance.groupBy("Balance_flag").count().show()
+
+print("NULL balance records sample:")
+df_balance.filter(F.col("Balance_flag") == "BALANCE_UNAVAILABLE").select(
+    "LoanID", "ReportingDate", "CurrentOutstandingBalance", "Balance_flag"
+).show(5, truncate=False)
 
 # METADATA ********************
 
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
 # META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.5** - Cast ReportingDate and LastPaymentDate from TIMESTAMP to DATE
+
 
 # CELL ********************
 
-df_collateral.filter(
-    F.col("TickerSymbol") == "NVDA"
-).groupBy("Exchange").count().show()
+# --- Step 6.5: Cast ReportingDate and LastPaymentDate from TIMESTAMP to DATE ---
+# Profiling finding: both fields stored as TIMESTAMP with time component
+# 00:00:00. Time component carries no information.
+# Type mismatch between TIMESTAMP and DATE causes silent join failures
+# when these fields are used as join keys or in date comparisons.
+# F.to_date() strips the time component and produces a clean DATE value.
+
+df_balance = df_balance \
+    .withColumn(
+        "ReportingDate",
+        F.to_date(F.col("ReportingDate"))
+    ).withColumn(
+        "LastPaymentDate",
+        F.to_date(F.col("LastPaymentDate"))
+    )
+
+# Quick check - confirm types changed
+print("Step 6.5 complete - Date column types after cast:")
+df_balance.select(
+    "ReportingDate", "LastPaymentDate"
+).printSchema()
+
+print("Sample date values after cast:")
+df_balance.select(
+    "LoanID", "ReportingDate", "LastPaymentDate"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.6** - Cast CurrentOutstandingBalance and LastPaymentAmount from DOUBLE to DECIMAL
+
+
+# CELL ********************
+
+# --- Step 6.6: Cast financial columns from DOUBLE to DECIMAL ---
+# Profiling finding: CurrentOutstandingBalance and LastPaymentAmount
+# stored as DOUBLE. Floating point precision risk on financial calculations.
+# DOUBLE stores approximations internally which accumulate as rounding
+# errors when aggregating large portfolios.
+# DecimalType(18,2) stores exact values to 2 decimal places.
+# Matches the schema of the SQL Server loan table for consistency.
+
+df_balance = df_balance \
+    .withColumn(
+        "CurrentOutstandingBalance",
+        F.col("CurrentOutstandingBalance").cast(DecimalType(18, 2))
+    ).withColumn(
+        "LastPaymentAmount",
+        F.col("LastPaymentAmount").cast(DecimalType(18, 2))
+    )
+
+# Quick check - confirm types changed
+print("Step 6.6 complete - Financial column types after cast:")
+df_balance.select(
+    "CurrentOutstandingBalance", "LastPaymentAmount"
+).printSchema()
+
+print("Sample financial values after cast:")
+df_balance.select(
+    "LoanID", "ReportingDate",
+    "CurrentOutstandingBalance", "LastPaymentAmount"
+).show(5, truncate=False)
 
 # METADATA ********************
 
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
 # META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.7** - Set is_eligible_for_ltv
+
 
 # CELL ********************
 
-df_bronze_collateral.printSchema()
+# --- Step 6.7: Set is_eligible_for_ltv for balance update records ---
+# A balance update record is ineligible for LTV if CurrentOutstandingBalance
+# is NULL. The authoritative balance figure is missing so this record
+# cannot contribute to LTV calculation.
+# Gold layer applies SQL Server OutstandingBalance as fallback for these records.
+# AccountStatus issues do not block LTV eligibility.
+# AccountStatus is a risk classification field not part of the LTV formula.
+
+df_balance = df_balance.withColumn(
+    "is_eligible_for_ltv",
+    F.when(
+        F.col("Balance_flag") == "BALANCE_UNAVAILABLE",
+        F.lit(False)
+    ).otherwise(
+        F.lit(True)
+    )
+)
+
+# Quick check
+print("Step 6.7 complete - is_eligible_for_ltv distribution:")
+df_balance.groupBy("is_eligible_for_ltv").count().show()
 
 # METADATA ********************
 
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
 # META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.8** - Build composite data_quality_flag
+
 
 # CELL ********************
 
-df_bronze_collateral.filter(
-    F.col("CollateralID") == "COL-0002"
-).select(
-    "CollateralID",
-    F.length("TickerSymbol").alias("ticker_length"),
-    "TickerSymbol"
+# --- Step 6.8: Build composite data_quality_flag ---
+# Combines IsDuplicate_flag, AccountStatus_flag, and Balance_flag
+# into a single composite column.
+# is_eligible_for_ltv retained as a separate standalone column.
+# Individual flag columns dropped after composite is built.
+
+df_balance = df_balance.withColumn(
+    "data_quality_flag",
+    F.when(
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("IsDuplicate_flag"),
+                    F.col("AccountStatus_flag"),
+                    F.col("Balance_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        F.lit("CLEAN")
+    ).otherwise(
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("IsDuplicate_flag"),
+                    F.col("AccountStatus_flag"),
+                    F.col("Balance_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop("IsDuplicate_flag", "AccountStatus_flag", "Balance_flag")
+
+# Quick check
+print("Step 6.8 complete - Composite data_quality_flag distribution:")
+df_balance.groupBy("data_quality_flag").count().orderBy(
+    "count", ascending=False
 ).show(truncate=False)
 
 # METADATA ********************
@@ -2678,34 +2960,135 @@ df_bronze_collateral.filter(
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
 # META }
 
 # MARKDOWN ********************
 
+# ### **Step 6.9** - Add audit columns
+
 
 # CELL ********************
 
-demo_silver_debtor_loan_collateral_1 = df_bronze_debtor \
-                        .join(df_bronze_loan, on = "DebtorID", how="left") \
-                        .join(df_bronze_collateral, on="LoanID", how="left")
+# --- Step 6.9: Add audit columns ---
+# silver_ingestion_timestamp and pipeline_run_id defined in Section 1.
+# Applied consistently to every Silver table in this notebook.
 
+df_balance = df_balance \
+    .withColumn(
+        "silver_ingestion_timestamp",
+        F.lit(SILVER_INGESTION_TIMESTAMP).cast(TimestampType())
+    ).withColumn(
+        "pipeline_run_id", F.lit(PIPELINE_RUN_ID)
+    )
 
-# demo_silver_debtor_loan_collateral_1.show()
-
-
-total_rows = demo_silver_debtor_loan_collateral_1.count()
-
-print(f"The DataFrame has {total_rows} rows.")
+print("Step 6.9 complete - Audit columns added.")
+print(f"  pipeline_run_id            : {PIPELINE_RUN_ID}")
+print(f"  silver_ingestion_timestamp : {SILVER_INGESTION_TIMESTAMP}")
 
 # METADATA ********************
 
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.10** - Select and order final columns
+
+
+# CELL ********************
+
+# --- Step 6.10: Select and order final columns ---
+# Explicit column selection ensures no intermediate helper columns
+# leak into the Silver table.
+# Column order convention:
+#   Natural keys first, business columns, flag and eligibility columns,
+#   audit columns last.
+
+df_silver_bank_balance_update = df_balance.select(
+    # Natural keys
+    "LoanID",
+    "ClientID",
+    "DebtorID",
+
+    # Business columns
+    "ReportingDate",
+    "CurrentOutstandingBalance",
+    "LastPaymentDate",
+    "LastPaymentAmount",
+    "DaysPastDue",
+    "AccountStatus",
+    "SourceFileName",
+
+    # Eligibility and flag columns
+    "is_eligible_for_ltv",
+    "data_quality_flag",
+
+    # Audit columns
+    "ingestion_timestamp",
+    "source_system",
+    "pipeline_run_id",
+    "silver_ingestion_timestamp"
+)
+
+print("Step 6.10 complete - Final column selection confirmed.")
+print(f"Total columns : {len(df_silver_bank_balance_update.columns)}")
+print(f"Total rows    : {df_silver_bank_balance_update.count()}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 6.11** - Print summary counts
+
+# CELL ********************
+
+# --- Step 6.11: Print summary counts ---
+
+total               = df_silver_bank_balance_update.count()
+clean               = df_silver_bank_balance_update.filter(F.col("data_quality_flag") == "CLEAN").count()
+flagged             = df_silver_bank_balance_update.filter(F.col("data_quality_flag") != "CLEAN").count()
+balance_unavailable = df_silver_bank_balance_update.filter(F.col("data_quality_flag").contains("BALANCE_UNAVAILABLE")).count()
+unknown_status      = df_silver_bank_balance_update.filter(F.col("data_quality_flag").contains("UNKNOWN_ACCOUNT_STATUS")).count()
+suspect_status      = df_silver_bank_balance_update.filter(F.col("data_quality_flag").contains("SUSPECT_ACCOUNT_STATUS")).count()
+eligible            = df_silver_bank_balance_update.filter(F.col("is_eligible_for_ltv") == True).count()
+ineligible          = df_silver_bank_balance_update.filter(F.col("is_eligible_for_ltv") == False).count()
+duplicates_removed  = duplicate_count_balance
+
+print("=" * 55)
+print("silver_bank_balance_update SUMMARY")
+print("=" * 55)
+print(f"  Total records              : {total}")
+print(f"  Clean records              : {clean}")
+print(f"  Flagged records            : {flagged}")
+print(f"  Balance unavailable        : {balance_unavailable}")
+print(f"  Unknown account status     : {unknown_status}")
+print(f"  Suspect account status     : {suspect_status}")
+print(f"  Eligible for LTV           : {eligible}")
+print(f"  Ineligible for LTV         : {ineligible}")
+print(f"  Duplicates removed         : {duplicates_removed}")
+print("=" * 55)
+print("Section 6 complete. df_silver_bank_balance_update ready.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
 # META }
 
 # CELL ********************
