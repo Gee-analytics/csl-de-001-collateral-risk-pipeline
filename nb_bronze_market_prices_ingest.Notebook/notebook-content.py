@@ -31,6 +31,9 @@
 # **Layer:** Bronze  
 # **Source:** Yahoo Finance via yfinance Python library  
 # **Target Table:** bronze_market_prices  
+# **Project:** Collateral Risk Monitoring & Margin Call Automation System <br>
+# **Organisation:** Collection Solutions Limited (CSL) <br>
+# 
 # 
 # ## Purpose
 # This notebook ingests daily closing prices for CSL collateral ticker symbols 
