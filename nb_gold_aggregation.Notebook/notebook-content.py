@@ -604,11 +604,110 @@ print("Ready to proceed to Section 6: Populate dim_debtor.")
 
 # MARKDOWN ********************
 
-# ### **Step 1.3** - Run identity: RunID, pipeline run date, run timestamp
+# ## Section 6: Populate `dim_debtor` with SCD Type 2
+# Builds the debtor dimension from `silver_debtor_loan_collateral`.
+# Deduplicates on DebtorID before building to avoid row inflation from
+# the one-to-many relationship between debtors, loans, and collateral assets.
+# One row per debtor per version. SCD Type 2 tracks attribute changes over time.
+# PII fields PhoneNumber, EmailAddress, and ResidentialAddress pass through
+# in readable form. Access is controlled via RLS at the Power BI semantic
+# model level, not by hashing at the data layer.
+# NationalID passes through as already hashed in Silver.
+# 
+# ### Steps
+# - **Step 6.1** - Filter to IsCurrent = True and deduplicate on DebtorID
+# - **Step 6.2** - Generate DebtorSurrogateKey as SHA-256 hash
+# - **Step 6.3** - Select and order final columns
+# - **Step 6.4** - Apply SCD Type 2 merge into dim_debtor
+# - **Step 6.5** - Print confirmation
 
 
 # CELL ********************
 
+# =============================================================================
+# SECTION 6: POPULATE dim_debtor WITH SCD TYPE 2
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 6.1 Filter to IsCurrent = True and deduplicate on DebtorID ---
+# silver_debtor_loan_collateral has 300 rows at collateral asset grain.
+# 1 debtor can have multiple loans, each loan can have multiple collateral
+# assets producing multiple rows per debtor in the Silver table.
+# Reading all 300 rows directly would inflate dim_debtor with duplicates.
+# We filter to IsCurrent = True first to exclude expired SCD Type 2 versions,
+# then deduplicate on DebtorID keeping only debtor-level attributes.
+# row_number() over DebtorID ordered by EffectiveStartDate descending ensures
+# we keep the most recent version of each debtor record where duplicates exist.
+
+window_debtor = Window.partitionBy("DebtorID").orderBy(F.col("EffectiveStartDate").desc())
+
+df_debtor_deduped = df_debtor_loan_collateral.filter(
+    F.col("IsCurrent") == True
+).withColumn(
+    "row_num", F.row_number().over(window_debtor)
+).filter(
+    F.col("row_num") == 1
+).drop("row_num")
+
+# --- 6.2 Generate DebtorSurrogateKey ---
+# SHA-256 hash of DebtorID concatenated with EffectiveStartDate.
+# Deterministic and unique per debtor version.
+df_debtor_deduped = df_debtor_deduped.withColumn(
+    "DebtorSurrogateKey",
+    F.sha2(
+        F.concat_ws("|", F.col("DebtorID"), F.col("EffectiveStartDate")),
+        256
+    )
+)
+
+# --- 6.3 Select and order final columns ---
+# PII fields pass through in readable form per the agreed PII strategy.
+# Access controlled via RLS at Power BI semantic model level.
+# NationalID is already hashed in Silver. No further action required here.
+df_dim_debtor = df_debtor_deduped.select(
+    F.col("DebtorSurrogateKey"),
+    F.col("DebtorID"),
+    F.col("ClientID"),
+    F.col("AssignedOfficerID"),
+    F.col("FullName"),
+    F.col("NationalID"),
+    F.col("PhoneNumber"),
+    F.col("EmailAddress"),
+    F.col("ResidentialAddress"),
+    F.col("Region"),
+    F.col("DateOnboarded"),
+    F.col("EffectiveStartDate"),
+    F.col("EffectiveEndDate"),
+    F.col("IsCurrent"),
+    # Audit columns
+    F.lit(PIPELINE_RUN_DATE).cast(DateType()).alias("gold_load_date"),
+    F.lit(RUN_ID).alias("gold_run_id")
+)
+
+# --- 6.4 Apply SCD Type 2 merge into dim_debtor ---
+# First run: write directly using saveAsTable.
+# Subsequent runs: merge on DebtorSurrogateKey to insert new versions
+# and update existing records where attributes have changed.
+if not spark.catalog.tableExists(GOLD_DIM_DEBTOR):
+    df_dim_debtor.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .saveAsTable(GOLD_DIM_DEBTOR)
+    print("dim_debtor created on first run.")
+else:
+    delta_table = DeltaTable.forName(spark, GOLD_DIM_DEBTOR)
+    delta_table.alias("target").merge(
+        df_dim_debtor.alias("source"),
+        "target.DebtorSurrogateKey = source.DebtorSurrogateKey"
+    ).whenMatchedUpdateAll() \
+     .whenNotMatchedInsertAll() \
+     .execute()
+    print("dim_debtor updated via SCD Type 2 merge.")
+
+# --- 6.5 Print confirmation ---
+row_count = spark.table(GOLD_DIM_DEBTOR).count()
+print(f"dim_debtor row count: {row_count}")
+print("Ready to proceed to Section 7: Populate dim_loan.")
 
 # METADATA ********************
 
