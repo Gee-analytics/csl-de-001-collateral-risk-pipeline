@@ -147,8 +147,12 @@ SILVER_MARKET_PRICES          = "Tables/dbo/silver_market_prices"
 SILVER_COLLECTIONS_OFFICER    = "Tables/dbo/silver_collections_officer"
 SILVER_OFFICER_CLIENT_MAPPING = "Tables/dbo/silver_officer_client_mapping"
 
-# Bronze reference table - dim_client_bank sources directly from here
-BRONZE_CLIENT_BANK            = "Tables/dbo/bronze_client_bank"
+
+# Silver reference table - dim_client_bank sources from Silver not Bronze
+# Silver has applied type casting, trimming, and audit columns.
+# Sourcing from Bronze would break the architectural contract that Gold reads from Silver only.
+SILVER_CLIENT_BANK = "Tables/dbo/silver_client_bank"
+
 
 # --- 1.7 Gold output table names ---
 # Written using saveAsTable. Fabric assigns dbo schema automatically.
@@ -243,10 +247,11 @@ df_collections_officer = spark.read.format("delta").load(SILVER_COLLECTIONS_OFFI
 # --- 2.5 Read silver_officer_client_mapping ---
 df_officer_client_mapping = spark.read.format("delta").load(SILVER_OFFICER_CLIENT_MAPPING)
 
-# --- 2.6 Read bronze_client_bank ---
-# dim_client_bank sources directly from Bronze. 4-row reference table.
-# No Silver transformation was required for this table.
-df_bronze_client_bank = spark.read.format("delta").load(BRONZE_CLIENT_BANK)
+
+# --- 2.6 Read silver_client_bank ---
+# Sources from Silver not Bronze to maintain the architectural contract
+# that Gold reads exclusively from Silver layer tables.
+df_silver_client_bank = spark.read.format("delta").load(SILVER_CLIENT_BANK)
 
 # --- 2.7 Row count validation ---
 expected_counts = {
@@ -255,7 +260,7 @@ expected_counts = {
     "silver_market_prices"          : (df_market_prices,          1888),
     "silver_collections_officer"    : (df_collections_officer,    20),
     "silver_officer_client_mapping" : (df_officer_client_mapping, 53),
-    "bronze_client_bank"            : (df_bronze_client_bank,     4),
+    "silver_client_bank"            : (df_silver_client_bank,      4),
 }
 
 print("=== Section 2: Silver Input Table Validation ===\n")
