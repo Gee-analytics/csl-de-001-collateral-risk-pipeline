@@ -718,11 +718,108 @@ print("Ready to proceed to Section 7: Populate dim_loan.")
 
 # MARKDOWN ********************
 
-# ### **Step 1.5** - Lakehouse name
+# ## Section 7: Populate `dim_loan` with SCD Type 2
+# Builds the loan dimension from `silver_debtor_loan_collateral`.
+# Deduplicates on LoanID to eliminate row inflation from the one-to-many
+# relationship between loans and collateral assets.
+# SCD Type 2 tracks loan status transitions over time e.g. Active to Defaulted.
+# Expected row count: 250 distinct loans confirmed via SQL query.
+# 
+# ### Steps
+# - **Step 7.1** - Filter to IsCurrent = True and deduplicate on LoanID
+# - **Step 7.2** - Generate LoanSurrogateKey as SHA-256 hash
+# - **Step 7.3** - Select and order final columns
+# - **Step 7.4** - Apply SCD Type 2 merge into dim_loan
+# - **Step 7.5** - Print confirmation
 
 
 # CELL ********************
 
+# =============================================================================
+# SECTION 7: POPULATE dim_loan WITH SCD TYPE 2
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 7.1 Filter to IsCurrent = True and deduplicate on LoanID ---
+# silver_debtor_loan_collateral has 300 rows at collateral asset grain.
+# One loan can back multiple collateral assets producing duplicate LoanID
+# rows in Silver. Deduplicating on LoanID before building dim_loan
+# prevents row inflation in the dimension table.
+# 250 distinct LoanIDs confirmed via SQL query before this section was built.
+# row_number() over LoanID ordered by EffectiveStartDate descending keeps
+# the most recent version of each loan record where duplicates exist.
+
+window_loan = Window.partitionBy("LoanID").orderBy(F.col("EffectiveStartDate").desc())
+
+df_loan_deduped = df_debtor_loan_collateral.filter(
+    F.col("IsCurrent") == True
+).withColumn(
+    "row_num", F.row_number().over(window_loan)
+).filter(
+    F.col("row_num") == 1
+).drop("row_num")
+
+# --- 7.2 Generate LoanSurrogateKey ---
+# SHA-256 hash of LoanID concatenated with EffectiveStartDate.
+# Deterministic and unique per loan version.
+# Concatenating EffectiveStartDate ensures uniqueness across multiple
+# versions of the same loan when LoanStatus changes over time.
+df_loan_deduped = df_loan_deduped.withColumn(
+    "LoanSurrogateKey",
+    F.sha2(
+        F.concat_ws("|", F.col("LoanID"), F.col("EffectiveStartDate")),
+        256
+    )
+)
+
+# --- 7.3 Select and order final columns ---
+# Loan-level attributes only. Debtor and collateral attributes excluded.
+# They belong in dim_debtor and dim_collateral_asset respectively.
+df_dim_loan = df_loan_deduped.select(
+    F.col("LoanSurrogateKey"),
+    F.col("LoanID"),
+    F.col("DebtorID"),
+    F.col("ClientID"),
+    F.col("InitialLoanAmount"),
+    F.col("OutstandingBalance"),
+    F.col("LoanStartDate"),
+    F.col("LoanMaturityDate"),
+    F.col("LoanStatus"),
+    F.col("DaysPastDue"),
+    F.col("LastPaymentDate"),
+    F.col("LastPaymentAmount"),
+    F.col("EffectiveStartDate"),
+    F.col("EffectiveEndDate"),
+    F.col("IsCurrent"),
+    # Audit columns
+    F.lit(PIPELINE_RUN_DATE).cast(DateType()).alias("gold_load_date"),
+    F.lit(RUN_ID).alias("gold_run_id")
+)
+
+# --- 7.4 Apply SCD Type 2 merge into dim_loan ---
+# First run: write directly using saveAsTable.
+# Subsequent runs: merge on LoanSurrogateKey to insert new loan versions
+# and update existing records where LoanStatus or other attributes change.
+if not spark.catalog.tableExists(GOLD_DIM_LOAN):
+    df_dim_loan.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .saveAsTable(GOLD_DIM_LOAN)
+    print("dim_loan created on first run.")
+else:
+    delta_table = DeltaTable.forName(spark, GOLD_DIM_LOAN)
+    delta_table.alias("target").merge(
+        df_dim_loan.alias("source"),
+        "target.LoanSurrogateKey = source.LoanSurrogateKey"
+    ).whenMatchedUpdateAll() \
+     .whenNotMatchedInsertAll() \
+     .execute()
+    print("dim_loan updated via SCD Type 2 merge.")
+
+# --- 7.5 Print confirmation ---
+row_count = spark.table(GOLD_DIM_LOAN).count()
+print(f"dim_loan row count: {row_count}")
+print("Ready to proceed to Section 8: Populate dim_collateral_asset.")
 
 # METADATA ********************
 
@@ -737,13 +834,17 @@ print("Ready to proceed to Section 7: Populate dim_loan.")
 
 # CELL ********************
 
-
+# MAGIC %%sql
+# MAGIC 
+# MAGIC 
+# MAGIC SELECT Count(distinct LoanID)
+# MAGIC FROM silver_debtor_loan_collateral
 
 
 # METADATA ********************
 
 # META {
-# META   "language": "python",
+# META   "language": "sparksql",
 # META   "language_group": "synapse_pyspark"
 # META }
 
