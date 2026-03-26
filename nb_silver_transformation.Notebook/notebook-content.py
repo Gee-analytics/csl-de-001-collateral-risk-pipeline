@@ -3596,6 +3596,113 @@ print("Section 7 complete. df_silver_market_prices ready.")
 
 # MARKDOWN ********************
 
+# ---
+# ## Section 7b: Clean and Transform `silver_client_bank`
+# 
+# Produces `silver_client_bank` from `bronze_client_bank`.
+# 
+# Profiling finding: this table is completely clean. Zero data quality issues
+# found across all 5 columns. No nulls, no duplicates, no type casting required.
+# 
+# Rationale for inclusion despite no cleaning required:
+# Medallion architecture convention requires every source table to have a
+# Silver representation. Omitting silver_client_bank would break the data
+# lineage chain from Bronze to Gold and create an asymmetry that any
+# reviewer or auditor would rightly question. A Silver table with no
+# cleaning logic is still a valid and necessary architectural artifact.
+# It confirms explicitly that the table was profiled, evaluated, and
+# consciously passed through without transformation rather than overlooked.
+# 
+# ### Steps
+# - **Step 7b.1** - Apply baseline STRING trim
+# - **Step 7b.2** - Add audit columns
+# - **Step 7b.3** - Select and order final columns
+# - **Step 7b.4** - Print summary counts
+
+# CELL ********************
+
+# ============================================================
+# SECTION 7b: CLEAN AND TRANSFORM silver_client_bank
+# ============================================================
+
+# Start from the raw Bronze DataFrame
+df_client_bank = df_bronze_client_bank
+
+# --- Step 7b.1: Apply baseline STRING trim ---
+# Profiling finding: bronze_client_bank is completely clean.
+# Zero data quality issues found. No nulls, no duplicates,
+# no type casting required. No data_quality_flag column needed
+# because every record is clean by confirmed profiling evidence.
+# Baseline trim applied as standard practice across all Silver tables.
+
+string_columns_client_bank = [
+    field.name for field in df_client_bank.schema.fields
+    if field.dataType.typeName() == "string"
+]
+
+for col_name in string_columns_client_bank:
+    df_client_bank = df_client_bank.withColumn(
+        col_name, F.trim(F.col(col_name))
+    )
+
+print(f"Step 7b.1 complete - Baseline trim applied to: {string_columns_client_bank}")
+
+# --- Step 7b.2: Add audit columns ---
+# silver_ingestion_timestamp and pipeline_run_id defined in Section 1.
+# Applied consistently to every Silver table in this notebook.
+
+df_client_bank = df_client_bank \
+    .withColumn(
+        "silver_ingestion_timestamp",
+        F.lit(SILVER_INGESTION_TIMESTAMP).cast(TimestampType())
+    ).withColumn(
+        "pipeline_run_id", F.lit(PIPELINE_RUN_ID)
+    )
+
+print("Step 7b.2 complete - Audit columns added.")
+
+# --- Step 7b.3: Select and order final columns ---
+# Explicit column selection for consistency with all other Silver tables.
+
+df_silver_client_bank = df_client_bank.select(
+    "ClientID",
+    "ClientName",
+    "ContactEmail",
+    "ContactPhone",
+    "S3FolderPath",
+    "IsActive",
+    "ingestion_timestamp",
+    "source_system",
+    "pipeline_run_id",
+    "silver_ingestion_timestamp"
+)
+
+print("Step 7b.3 complete - Final column selection confirmed.")
+print(f"  Total columns : {len(df_silver_client_bank.columns)}")
+print(f"  Total rows    : {df_silver_client_bank.count()}")
+
+# --- Step 7b.4: Print summary counts ---
+total = df_silver_client_bank.count()
+
+print("=" * 55)
+print("silver_client_bank SUMMARY")
+print("=" * 55)
+print(f"  Total records              : {total}")
+print(f"  Data quality issues        : 0")
+print(f"  Profiling status           : PASS - fully clean")
+print(f"  Transformation applied     : Baseline trim and audit columns only")
+print("=" * 55)
+print("Section 7b complete. df_silver_client_bank ready.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
 # ## Section 8: Write All Silver Tables to Delta
 # 
 # Writes all 5 Silver DataFrames to managed Delta tables in the Lakehouse.
@@ -3608,6 +3715,7 @@ print("Section 7 complete. df_silver_market_prices ready.")
 # | `silver_debtor_loan_collateral` | Delta merge with SCD Type 2 | Loan status history must be preserved |
 # | `silver_bank_balance_update` | Append with watermark | Timeseries data, history must be preserved |
 # | `silver_market_prices` | Append with watermark | Timeseries data, history must be preserved |
+# | `silver_client_bank` | Full overwrite | Completely clean reference table, 4 rows |
 # 
 # ### Steps
 # - **Step 8.1** - Write `silver_collections_officer` (full overwrite)
@@ -3629,6 +3737,36 @@ print("Section 7 complete. df_silver_market_prices ready.")
 # ============================================================
 # SECTION 8: WRITE ALL SILVER TABLES TO DELTA
 # ============================================================
+
+
+# --- Step 8.0: Write silver_client_bank ---
+# Strategy: full overwrite on every run.
+# Rationale: 4 row reference table. Completely clean at profiling.
+# Overwriting guarantees Silver always reflects current source state.
+# Same strategy as silver_collections_officer for the same reason.
+
+df_silver_client_bank.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable("silver_client_bank")
+
+count = spark.table("silver_client_bank").count()
+print("Step 8.0 complete - silver_client_bank written.")
+print(f"  Rows written : {count}")
+print(f"  Expected     : 4")
+print(f"  Match        : {count == 4}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+
 
 # --- Step 8.1: Write silver_collections_officer ---
 # Strategy: full overwrite on every run.
@@ -4026,6 +4164,25 @@ print("=" * 55)
 # - **Step 9.4** - Log silver_bank_balance_update
 # - **Step 9.5** - Log silver_market_prices
 # - **Step 9.6** - Verify metadata entries
+
+# CELL ********************
+
+# --- Step 9.0: Log silver_client_bank ---
+log_pipeline_metadata(
+    table_name = "silver_client_bank",
+    rows_in    = df_bronze_client_bank.count(),
+    rows_out   = spark.table("silver_client_bank").count(),
+    status     = "SUCCESS",
+    notes      = "Table fully clean at profiling. Baseline trim and audit columns only."
+)
+print("Step 9.0 complete - silver_client_bank logged.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
 
 # MARKDOWN ********************
 
