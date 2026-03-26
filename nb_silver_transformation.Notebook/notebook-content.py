@@ -102,7 +102,7 @@
 
 # MARKDOWN ********************
 
-# - ## Step 1.1 - Import all required libraries
+# ### Step 1.1 - Import all required libraries
 # Imports all PySpark, Delta Lake, and standard library modules required across the entire notebook.  
 # All imports are declared here once rather than scattered across sections.
 
@@ -3091,169 +3091,448 @@ print("Section 6 complete. df_silver_bank_balance_update ready.")
 # META   "editable": true
 # META }
 
-# CELL ********************
+# MARKDOWN ********************
 
-demo_silver_debtor_loan_collateral_2 = df_bronze_debtor \
-                        .join(df_bronze_loan, on = "DebtorID", how="inner") \
-                        .join(df_bronze_collateral, on="LoanID", how="left")
+# ## Section 7: Clean and Transform `silver_market_prices`
+# 
+# Produces `silver_market_prices` from `bronze_market_prices`.
+# Kept separate as a reference table joined at Gold by TickerSymbol and PriceDate.
+# ClosePrice is the value used in the LTV denominator calculation:
+# Total Collateral Value = Sum of (QuantityHeld * ClosePrice) per debtor.
+# 
+# ### Steps
+# - **Step 7.1** - Deduplicate on TickerSymbol + PriceDate
+# - **Step 7.2** - Baseline normalisation: trim and uppercase TickerSymbol
+# - **Step 7.3** - Flag NULL or zero ClosePrice
+# - **Step 7.4** - Derive AssetType from TickerSymbol
+# - **Step 7.5** - Cast PriceDate from TIMESTAMP to DATE
+# - **Step 7.6** - Cast price columns from DOUBLE to DECIMAL
+# - **Step 7.7** - Cast Volume from DOUBLE to LONG
+# - **Step 7.8** - Build composite data_quality_flag
+# - **Step 7.9** - Add audit columns
+# - **Step 7.10** - Select and order final columns
+# - **Step 7.11** - Print summary counts
 
+# MARKDOWN ********************
 
-# demo_silver_debtor_loan_collateral_1.show()
-
-
-total_rows = demo_silver_debtor_loan_collateral_2.count()
-
-print(f"The DataFrame has {total_rows} rows.")
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-df_bronze_loan.printSchema()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
+# ---
+# ### **Step 7.1** - Deduplicate on TickerSymbol + PriceDate
 
 # CELL ********************
 
-df_bronze_collateral.printSchema()
+# ============================================================
+# SECTION 7: CLEAN AND TRANSFORM silver_market_prices
+# ============================================================
 
-# METADATA ********************
+# Start from the raw Bronze DataFrame
+df_prices = df_bronze_market_prices
 
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
+# --- Step 7.1: Deduplicate on TickerSymbol + PriceDate ---
+# Profiling finding: no duplicates at time of profiling.
+# Applied defensively because the pipeline runs daily and duplicates
+# may accumulate over time.
+# Rule: keep the record with the latest ingestion_timestamp per
+# TickerSymbol + PriceDate combination.
 
-# CELL ********************
-
-df_mapping.printSchema()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-df_officer.printSchema()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-df_officer1 = df_bronze_collections_officer
-df_officer1.show(22)
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-df_officer.show()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-b_collections_officer = df_bronze_collections_officer
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-b_collections_officer.show()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
-# META }
-
-# CELL ********************
-
-"""
-b_collections_officer = b_collections_officer.withColumn(
-    # strip the leading and the trailing spaces
-    # convert every value in the col to lowercase 
-    "Email", F.lower(F.trim(F.col("Email")))
+window_dup = Window.partitionBy("TickerSymbol", "PriceDate").orderBy(
+    F.col("ingestion_timestamp").desc()
 )
-"""
-# convert every value in the col to lowercase 
-b_collections_officer = b_collections_officer.withColumn("Email", F.lower("Email"))
 
-# strip the leading and the trailing spaces
-b_collections_officer = b_collections_officer.withColumn("Email", F.trim("Email"))
-
-
-# Apply BOTH transformations to the column in a single pass
-b_collections_officer = b_collections_officer.withColumn("Email", F.trim(F.lower("Email")))
-
-
-
-    # strip the leading and the trailing spaces
-    # convert every value in the col to lowercase
-
-
-
-
-
-# Split FullName into first and last name for the suspect email check.
-# F.split returns an array. Index 0 is first name, index -1 is last name.
-df_officer = df_officer.withColumn(
-    "first_name_lower",
-    F.lower(F.split(F.col("FullName"), " ")[0])
+df_prices = df_prices.withColumn(
+    "row_rank", F.row_number().over(window_dup)
 ).withColumn(
-    "last_name_lower",
-    F.lower(F.split(F.col("FullName"), " ")[F.size(F.split(F.col("FullName"), " ")) - 1])
+    "IsDuplicate_flag",
+    F.when(F.col("row_rank") == 1, F.lit("CLEAN"))
+    .otherwise(F.lit("DUPLICATE_REMOVED"))
 )
+
+duplicate_count_prices = df_prices.filter(
+    F.col("IsDuplicate_flag") == "DUPLICATE_REMOVED"
+).count()
+
+df_prices = df_prices.filter(F.col("row_rank") == 1).drop("row_rank")
+
+print(f"Step 7.1 complete - Duplicates removed: {duplicate_count_prices}")
+print(f"Rows after deduplication: {df_prices.count()}")
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.2** - Baseline normalisation: trim and uppercase TickerSymbol
+
+# MARKDOWN ********************
+
+
+# CELL ********************
+
+# --- Step 7.2: Baseline normalisation - trim and uppercase TickerSymbol ---
+# Applying trim to all STRING columns defensively before any transformation.
+# Uppercase TickerSymbol to ensure consistent join with silver_collateral
+# which also stores tickers in uppercase after Step 5.13 corrections.
+# A case mismatch on TickerSymbol produces a silent null join at Gold.
+
+string_columns_prices = [
+    field.name for field in df_prices.schema.fields
+    if field.dataType.typeName() == "string"
+]
+
+for col_name in string_columns_prices:
+    df_prices = df_prices.withColumn(
+        col_name, F.trim(F.col(col_name))
+    )
+
+df_prices = df_prices.withColumn(
+    "TickerSymbol", F.upper(F.col("TickerSymbol"))
+)
+
+print("Step 7.2 complete - Baseline normalisation applied.")
+print(f"STRING columns trimmed: {string_columns_prices}")
+print("\nTickerSymbol distribution after uppercase:")
+df_prices.groupBy("TickerSymbol").count().orderBy(
+    "count", ascending=False
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.3** - Flag NULL or zero ClosePrice
+
+# CELL ********************
+
+# --- Step 7.3: Flag NULL or zero ClosePrice ---
+# Profiling finding: 2 rows with all OHLC values NULL simultaneously.
+# A NULL or zero ClosePrice produces NULL or zero collateral value in LTV.
+# This completely distorts the LTV ratio for that debtor.
+# These records must not be used in LTV calculation.
+# Flag here. Gold layer applies the 5 business day fallback rule:
+# use most recent non-null ClosePrice within 5 business days.
+# If none found within 5 days, flag collateral record as STALE_DATA.
+
+df_prices = df_prices.withColumn(
+    "Price_flag",
+    F.when(
+        F.col("Close").isNull() | (F.col("Close") == 0),
+        F.lit("INVALID_PRICE")
+    ).otherwise(
+        F.lit("CLEAN")
+    )
+)
+
+# Quick check
+print("Step 7.3 complete - Price flag distribution:")
+df_prices.groupBy("Price_flag").count().show()
+
+print("Invalid price records:")
+df_prices.filter(F.col("Price_flag") == "INVALID_PRICE").select(
+    "TickerSymbol", "PriceDate", "Close", "High", "Low", "Open", "Price_flag"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+
+# MARKDOWN ********************
+
+# ### **Step 7.4** - Derive AssetType from TickerSymbol
+
+# CELL ********************
+
+# --- Step 7.4: Derive AssetType from TickerSymbol ---
+# bronze_market_prices does not contain an AssetType column.
+# The yfinance API does not return asset type information.
+# AssetType is derived from TickerSymbol using a simple rule:
+#   BTC-USD -> Crypto
+#   All others -> Stock
+# This column supports downstream filtering and segmentation
+# in the Gold layer and Power BI Risk Command Centre dashboard.
+
+df_prices = df_prices.withColumn(
+    "AssetType",
+    F.when(
+        F.col("TickerSymbol") == "BTC-USD",
+        F.lit("Crypto")
+    ).otherwise(
+        F.lit("Stock")
+    )
+)
+
+# Quick check
+print("Step 7.4 complete - AssetType distribution:")
+df_prices.groupBy("AssetType", "TickerSymbol").count().orderBy(
+    "AssetType", "TickerSymbol"
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.5** - Cast PriceDate from TIMESTAMP to DATE
+
+# MARKDOWN ********************
+
+
+# CELL ********************
+
+# --- Step 7.5: Cast PriceDate from TIMESTAMP to DATE ---
+# Profiling finding: PriceDate stored as TIMESTAMP with time component
+# 00:00:00. Time component carries no information.
+# PriceDate is the join key between silver_market_prices and
+# silver_debtor_loan_collateral at Gold layer.
+# A TIMESTAMP to DATE type mismatch causes silent join failures.
+# F.to_date() strips the time component and produces a clean DATE value.
+
+df_prices = df_prices.withColumn(
+    "PriceDate",
+    F.to_date(F.col("PriceDate"))
+)
+
+# Quick check
+print("Step 7.5 complete - PriceDate type after cast:")
+df_prices.select("PriceDate").printSchema()
+
+print("Sample PriceDate values after cast:")
+df_prices.select(
+    "TickerSymbol", "PriceDate", "Close"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.6** - Cast price columns from DOUBLE to DECIMAL
+
+# CELL ********************
+
+# --- Step 7.6: Cast price columns from DOUBLE to DECIMAL ---
+# Profiling finding: Close, High, Low, Open all stored as DOUBLE.
+# Sample output from Step 7.5 confirmed floating point imprecision:
+# 214.30596923828125 instead of 214.31.
+# DecimalType(18,6) chosen over DecimalType(18,2) because:
+#   Equity prices: 2 decimal places sufficient
+#   Crypto prices: BTC-USD trades at values requiring more precision
+#   6 decimal places preserves meaningful crypto precision without
+#   unnecessary storage overhead.
+# Close is the value used in the LTV denominator calculation.
+# All OHLC columns cast for consistency.
+
+df_prices = df_prices \
+    .withColumn("Close", F.col("Close").cast(DecimalType(18, 6))) \
+    .withColumn("High",  F.col("High").cast(DecimalType(18, 6))) \
+    .withColumn("Low",   F.col("Low").cast(DecimalType(18, 6))) \
+    .withColumn("Open",  F.col("Open").cast(DecimalType(18, 6)))
+
+# Quick check
+print("Step 7.6 complete - Price column types after cast:")
+df_prices.select("Close", "High", "Low", "Open").printSchema()
+
+print("Sample Close values after cast:")
+df_prices.select(
+    "TickerSymbol", "PriceDate", "Close"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.7** - Cast Volume from DOUBLE to LONG
+
+# CELL ********************
+
+# --- Step 7.7: Cast Volume from DOUBLE to LONG ---
+# Volume is a count of shares or units traded.
+# It is always a whole number. No exchange records fractional volume.
+# DOUBLE is the wrong type for a count field.
+# LONG is the correct integer type for large whole numbers in PySpark.
+# BTC-USD volume can exceed billions so INTEGER is insufficient.
+# LONG supports values up to 9.2 quadrillion which is sufficient.
+
+df_prices = df_prices.withColumn(
+    "Volume",
+    F.col("Volume").cast(LongType())
+)
+
+# Quick check
+print("Step 7.7 complete - Volume type after cast:")
+df_prices.select("Volume").printSchema()
+
+print("Sample Volume values after cast:")
+df_prices.select(
+    "TickerSymbol", "PriceDate", "Volume"
+).show(5, truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ###  **Step 7.8** - Build composite data_quality_flag
+
+
+# CELL ********************
+
+# --- Step 7.8: Build composite data_quality_flag ---
+# Combines IsDuplicate_flag and Price_flag into a single composite column.
+# AssetType is a derived business column not a quality flag.
+# Individual flag columns dropped after composite is built.
+
+df_prices = df_prices.withColumn(
+    "data_quality_flag",
+    F.when(
+        F.size(
+            F.array_remove(
+                F.array(
+                    F.col("IsDuplicate_flag"),
+                    F.col("Price_flag")
+                ),
+                "CLEAN"
+            )
+        ) == 0,
+        F.lit("CLEAN")
+    ).otherwise(
+        F.array_join(
+            F.array_remove(
+                F.array(
+                    F.col("IsDuplicate_flag"),
+                    F.col("Price_flag")
+                ),
+                "CLEAN"
+            ),
+            "|"
+        )
+    )
+).drop("IsDuplicate_flag", "Price_flag")
+
+# Quick check
+print("Step 7.8 complete - Composite data_quality_flag distribution:")
+df_prices.groupBy("data_quality_flag").count().orderBy(
+    "count", ascending=False
+).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.9** - Add audit columns
+
+
+# CELL ********************
+
+# --- Step 7.9: Add audit columns ---
+# silver_ingestion_timestamp and pipeline_run_id defined in Section 1.
+# Applied consistently to every Silver table in this notebook.
+
+df_prices = df_prices \
+    .withColumn(
+        "silver_ingestion_timestamp",
+        F.lit(SILVER_INGESTION_TIMESTAMP).cast(TimestampType())
+    ).withColumn(
+        "pipeline_run_id", F.lit(PIPELINE_RUN_ID)
+    )
+
+print("Step 7.9 complete - Audit columns added.")
+print(f"  pipeline_run_id            : {PIPELINE_RUN_ID}")
+print(f"  silver_ingestion_timestamp : {SILVER_INGESTION_TIMESTAMP}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.10** - Select and order final columns
+
+
+# CELL ********************
+
+# --- Step 7.10: Select and order final columns ---
+# Explicit column selection ensures no intermediate helper columns
+# leak into the Silver table.
+# Column order convention:
+#   Natural keys first, business columns, derived columns,
+#   flag column, audit columns last.
+
+df_silver_market_prices = df_prices.select(
+    # Natural keys
+    "TickerSymbol",
+    "PriceDate",
+
+    # Business columns
+    "Close",
+    "High",
+    "Low",
+    "Open",
+    "Volume",
+
+    # Derived column
+    "AssetType",
+
+    # Flag column
+    "data_quality_flag",
+
+    # Audit columns
+    "ingestion_timestamp",
+    "source_system",
+    "pipeline_run_id",
+    "silver_ingestion_timestamp"
+)
+
+print("Step 7.10 complete - Final column selection confirmed.")
+print(f"Total columns : {len(df_silver_market_prices.columns)}")
+print(f"Total rows    : {df_silver_market_prices.count()}")
 
 
 # METADATA ********************
@@ -3261,18 +3540,49 @@ df_officer = df_officer.withColumn(
 # META {
 # META   "language": "python",
 # META   "language_group": "synapse_pyspark",
-# META   "frozen": true,
-# META   "editable": false
+# META   "frozen": false,
+# META   "editable": true
 # META }
+
+# MARKDOWN ********************
+
+# ### **Step 7.11** - Print summary counts
 
 # CELL ********************
 
-# Diagnostic: show all raw PhoneNumber values from Bronze#
-# df_bronze_collections_officer.select("OfficerID", "PhoneNumber").show(20, truncate=False)
+# --- Step 7.11: Print summary counts ---
+
+total           = df_silver_market_prices.count()
+clean           = df_silver_market_prices.filter(F.col("data_quality_flag") == "CLEAN").count()
+flagged         = df_silver_market_prices.filter(F.col("data_quality_flag") != "CLEAN").count()
+invalid_price   = df_silver_market_prices.filter(F.col("data_quality_flag").contains("INVALID_PRICE")).count()
+crypto_records  = df_silver_market_prices.filter(F.col("AssetType") == "Crypto").count()
+stock_records   = df_silver_market_prices.filter(F.col("AssetType") == "Stock").count()
+distinct_tickers = df_silver_market_prices.select("TickerSymbol").distinct().count()
+date_range_min  = df_silver_market_prices.agg(F.min("PriceDate")).collect()[0][0]
+date_range_max  = df_silver_market_prices.agg(F.max("PriceDate")).collect()[0][0]
+duplicates_removed = duplicate_count_prices
+
+print("=" * 55)
+print("silver_market_prices SUMMARY")
+print("=" * 55)
+print(f"  Total records              : {total}")
+print(f"  Clean records              : {clean}")
+print(f"  Flagged records            : {flagged}")
+print(f"  Invalid price records      : {invalid_price}")
+print(f"  Crypto records             : {crypto_records}")
+print(f"  Stock records              : {stock_records}")
+print(f"  Distinct tickers           : {distinct_tickers}")
+print(f"  Price date range           : {date_range_min} to {date_range_max}")
+print(f"  Duplicates removed         : {duplicates_removed}")
+print("=" * 55)
+print("Section 7 complete. df_silver_market_prices ready.")
 
 # METADATA ********************
 
 # META {
 # META   "language": "python",
-# META   "language_group": "synapse_pyspark"
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
 # META }
