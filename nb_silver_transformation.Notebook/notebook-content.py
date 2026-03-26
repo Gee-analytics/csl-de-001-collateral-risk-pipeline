@@ -184,15 +184,23 @@ BRONZE_PATH = "Tables/dbo"
 
 def log_pipeline_metadata(table_name, rows_in, rows_out, status, notes=""):
     """
-    This logs a single pipeline run record for one Silver table.
-
-    Args:
-        table_name  : Name of the Silver table being logged
-        rows_in     : Row count read from Bronze
-        rows_out    : Row count written to Silver
-        status      : 'SUCCESS' or 'FAILED'
-        notes       : Optional notes e.g. quarantine counts
+    Logs a single pipeline run record for one Silver table.
+    Checks for existing entry before writing to prevent duplicate logs
+    on notebook re-runs during development.
     """
+    # Check if entry already exists for this run and table
+    audit_table_exists = spark.catalog.tableExists("silver_pipeline_audit")
+    
+    if audit_table_exists:
+        existing = spark.table("silver_pipeline_audit").filter(
+            (F.col("pipeline_run_id") == PIPELINE_RUN_ID) &
+            (F.col("table_name") == table_name)
+        ).count()
+        
+        if existing > 0:
+            print(f"  Audit entry already exists for {table_name}. Skipping.")
+            return
+
     log_row = spark.createDataFrame([{
         "pipeline_run_id"  : PIPELINE_RUN_ID,
         "notebook_name"    : "nb_silver_transformation",
@@ -205,8 +213,7 @@ def log_pipeline_metadata(table_name, rows_in, rows_out, status, notes=""):
         "run_timestamp"    : SILVER_INGESTION_TIMESTAMP
     }])
 
-    log_row.write.format("delta").mode("append").save("Tables/gold/gold_pipeline_metadata")
-
+    log_row.write.format("delta").mode("append").saveAsTable("silver_pipeline_audit")
 
 # METADATA ********************
 
@@ -3973,7 +3980,12 @@ print(f"  Match          : {count == 1888}")
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+
 # CELL ********************
+
+#---------Final verification across all tables----------------
 
 silver_tables = [
     "silver_collections_officer",
@@ -3990,6 +4002,189 @@ for table in silver_tables:
     count = spark.table(table).count()
     print(f"  {table:<40} {count:>6} rows")
 print("=" * 55)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Section 9: Log Results to `gold_pipeline_metadata`
+# 
+# Writes one audit log row per Silver table to gold_pipeline_metadata.
+# This is the evidence trail for every pipeline execution.
+# Each row records the pipeline run ID, table name, row counts, status,
+# and any relevant data quality notes.
+# 
+# ### Steps
+# - **Step 9.1** - Log silver_collections_officer
+# - **Step 9.2** - Log silver_officer_client_mapping
+# - **Step 9.3** - Log silver_debtor_loan_collateral
+# - **Step 9.4** - Log silver_bank_balance_update
+# - **Step 9.5** - Log silver_market_prices
+# - **Step 9.6** - Verify metadata entries
+
+# MARKDOWN ********************
+
+# ### **Step 9.1** - Log silver_collections_officer
+
+
+# CELL ********************
+
+
+# --- Step 9.1: Log silver_collections_officer ---
+log_pipeline_metadata(
+    table_name = "silver_collections_officer",
+    rows_in = df_bronze_collections_officer.count(),
+    rows_out   = spark.table("silver_collections_officer").count(),
+    status     = "SUCCESS",
+    notes      = "Phone standardised: 1. Phone invalid: 1. Suspect email: 1. Missing join date: 2."
+)
+print("Step 9.1 complete - silver_collections_officer logged.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 9.2** - Log silver_officer_client_mapping
+
+
+# CELL ********************
+
+# --- Step 9.2: Log silver_officer_client_mapping ---
+log_pipeline_metadata(
+    table_name = "silver_officer_client_mapping",
+    rows_in = df_bronze_officer_client_mapping.count(),
+    rows_out   = spark.table("silver_officer_client_mapping").count(),
+    status     = "SUCCESS",
+    notes      = f"Duplicates removed: {duplicate_count}. IsActive corrected: 4. Inactive officer mappings: 9."
+)
+
+print("Step 9.2 complete - silver_officer_client_mapping logged.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 9.3** - Log silver_debtor_loan_collateral
+
+
+# CELL ********************
+
+
+# --- Step 9.3: Log silver_debtor_loan_collateral ---
+log_pipeline_metadata(
+    table_name = "silver_debtor_loan_collateral",
+    rows_in = df_bronze_debtor.join(df_bronze_loan, on="DebtorID", how="left").join(df_bronze_collateral, on="LoanID", how="left").count(),
+    rows_out   = spark.table("silver_debtor_loan_collateral").count(),
+    status     = "SUCCESS",
+    notes      = "Loan ineligible for LTV: 20. Collateral ineligible for LTV: 9. Both eligible: 275."
+)
+
+print("Step 9.3 complete - silver_debtor_loan_collateral logged.")
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 9.4** - Log silver_bank_balance_update
+
+
+# CELL ********************
+
+# --- Step 9.4: Log silver_bank_balance_update ---
+log_pipeline_metadata(
+    table_name = "silver_bank_balance_update",
+    rows_in = df_bronze_bank_balance_update.count(),
+    rows_out   = spark.table("silver_bank_balance_update").count(),
+    status     = "SUCCESS",
+    notes      = f"Duplicates removed: {duplicate_count_balance}. Balance unavailable: 16. Unknown account status: 7."
+)
+print("Step 9.4 complete - silver_bank_balance_update logged.")
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 9.5** - Log silver_market_prices
+
+
+# CELL ********************
+
+# --- Step 9.5: Log silver_market_prices ---
+log_pipeline_metadata(
+    table_name = "silver_market_prices",
+    rows_in = df_bronze_market_prices.count(),
+    rows_out   = spark.table("silver_market_prices").count(),
+    status     = "SUCCESS",
+    notes      = f"Duplicates removed: {duplicate_count_prices}. Invalid price records: 3."
+)
+print("Step 9.5 complete - silver_market_prices logged.")
+
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 9.6** - Verify metadata entries
+
+# CELL ********************
+
+# --- Step 9.6: Verify metadata entries ---
+print("\nStep 9.6 - Verifying metadata entries:")
+spark.table("silver_pipeline_audit") \
+    .filter(F.col("pipeline_run_id") == PIPELINE_RUN_ID) \
+    .select(
+        "table_name",
+        "rows_in",
+        "rows_out",
+        "status",
+        "run_timestamp"
+    ).show(truncate=False)
+
+print("Section 9 complete. nb_silver_transformation finished.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+
+
 
 # METADATA ********************
 
