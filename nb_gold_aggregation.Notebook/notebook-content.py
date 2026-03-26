@@ -535,11 +535,65 @@ print("Ready to proceed to Section 5: Populate dim_client_bank.")
 
 # MARKDOWN ********************
 
-# ### **Step 1.2** - PySpark imports & Spark session confirmation
+# ## Section 5: Populate `dim_client_bank`
+# Builds the client bank dimension from `silver_client_bank`.
+# 4 rows representing the four client banks CSL manages portfolios for.
+# Full overwrite on every run. No SCD Type 2 required given the static
+# nature of this reference table and the low probability of structural change.
+# 
+# ### Steps
+# - **Step 5.1** - Generate ClientSurrogateKey as SHA-256 hash of ClientID
+# - **Step 5.2** - Select and order final columns
+# - **Step 5.3** - Write to dim_client_bank using full overwrite
+# - **Step 5.4** - Print confirmation
 
 
 # CELL ********************
 
+# =============================================================================
+# SECTION 5: POPULATE dim_client_bank
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 5.1 Generate ClientSurrogateKey ---
+# SHA-256 hash of ClientID only. No EffectiveStartDate concatenated because
+# this is a full overwrite dimension with no versioning. ClientID is stable
+# and unique across all 4 rows making it sufficient as the hash input.
+df_dim_client_bank = df_silver_client_bank.withColumn(
+    "ClientSurrogateKey",
+    F.sha2(F.col("ClientID"), 256)
+)
+
+# --- 5.2 Select and order final columns ---
+df_dim_client_bank = df_dim_client_bank.select(
+    F.col("ClientSurrogateKey"),
+    F.col("ClientID"),
+    F.col("ClientName"),
+    F.col("ContactEmail"),
+    F.col("ContactPhone"),
+    F.col("S3FolderPath"),
+    F.col("IsActive").cast(BooleanType()).alias("IsActive"),
+    # Audit columns
+    F.lit(PIPELINE_RUN_DATE).cast(DateType()).alias("gold_load_date"),
+    F.lit(RUN_ID).alias("gold_run_id")
+)
+
+# --- 5.3 Write to dim_client_bank using full overwrite ---
+# Full overwrite is justified here because:
+# 1. Only 4 rows - compute cost is negligible
+# 2. Static reference table - changes are rare and deliberate
+# 3. No historical versioning required for client bank attributes
+# 4. Simpler and more maintainable than SCD Type 2 for a table this size
+df_dim_client_bank.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(GOLD_DIM_CLIENT_BANK)
+
+# --- 5.4 Print confirmation ---
+row_count = spark.table(GOLD_DIM_CLIENT_BANK).count()
+print(f"dim_client_bank written. Row count: {row_count}")
+print("Ready to proceed to Section 6: Populate dim_debtor.")
 
 # METADATA ********************
 
