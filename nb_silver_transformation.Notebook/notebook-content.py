@@ -3586,3 +3586,414 @@ print("Section 7 complete. df_silver_market_prices ready.")
 # META   "frozen": false,
 # META   "editable": true
 # META }
+
+# MARKDOWN ********************
+
+# ## Section 8: Write All Silver Tables to Delta
+# 
+# Writes all 5 Silver DataFrames to managed Delta tables in the Lakehouse.
+# Each table uses a write strategy appropriate to its nature and purpose.
+# 
+# | Table | Strategy | Reason |
+# |---|---|---|
+# | `silver_collections_officer` | Full overwrite | Small reference table, overwrite guarantees current state |
+# | `silver_officer_client_mapping` | Delta merge with SCD Type 2 | Assignment history must be preserved |
+# | `silver_debtor_loan_collateral` | Delta merge with SCD Type 2 | Loan status history must be preserved |
+# | `silver_bank_balance_update` | Append with watermark | Timeseries data, history must be preserved |
+# | `silver_market_prices` | Append with watermark | Timeseries data, history must be preserved |
+# 
+# ### Steps
+# - **Step 8.1** - Write `silver_collections_officer` (full overwrite)
+# - **Step 8.2** - Write `silver_officer_client_mapping` (Delta merge SCD Type 2)
+# - **Step 8.3** - Write `silver_debtor_loan_collateral` (Delta merge SCD Type 2)
+# - **Step 8.4** - Write `silver_bank_balance_update` (append with watermark)
+# - **Step 8.5** - Write `silver_market_prices` (append with watermark)
+
+
+# MARKDOWN ********************
+
+# ---
+# 
+# ### **Step 8.1** - Write `silver_collections_officer` (full overwrite)
+
+
+# CELL ********************
+
+# ============================================================
+# SECTION 8: WRITE ALL SILVER TABLES TO DELTA
+# ============================================================
+
+# --- Step 8.1: Write silver_collections_officer ---
+# Strategy: full overwrite on every run.
+# Rationale: small reference table with 20 records.
+# Overwriting guarantees Silver always reflects the current state
+# of the Bronze source without accumulating stale records.
+# SCD Type 2 is not needed here because assignment history is
+# tracked in silver_officer_client_mapping, not on the officer record itself.
+
+df_silver_collections_officer.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable("silver_collections_officer")
+
+# Verify write
+count = spark.table("silver_collections_officer").count()
+print("Step 8.1 complete - silver_collections_officer written.")
+print(f"  Rows written : {count}")
+print(f"  Expected     : 20")
+print(f"  Match        : {count == 20}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 8.2** - Write `silver_officer_client_mapping` (Delta merge SCD Type 2)
+
+
+# CELL ********************
+
+# --- Step 8.2: Write silver_officer_client_mapping ---
+# Strategy: Delta merge with SCD Type 2 logic.
+# Natural key: OfficerID + ClientID composite.
+# Tracked column: IsActive, officer_status_at_load.
+# On first run: write entire DataFrame as new table.
+# On subsequent runs: merge incoming records against existing table.
+#   - Match found + tracked column changed:
+#       Close old row (EffectiveEndDate = today, IsCurrent = False)
+#       Insert new row (new EffectiveStartDate, IsCurrent = True)
+#   - No match found: insert as new record.
+
+from delta.tables import DeltaTable
+
+# Check if table exists
+table_exists = spark.catalog.tableExists("silver_officer_client_mapping")
+
+if not table_exists:
+    # First run: write entire DataFrame as new table
+    df_silver_officer_client_mapping.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .saveAsTable("silver_officer_client_mapping")
+    print("Step 8.2 - First run: silver_officer_client_mapping created.")
+
+else:
+    # Subsequent runs: Delta merge with SCD Type 2 logic
+    delta_table = DeltaTable.forName(spark, "silver_officer_client_mapping")
+
+    # Step 1: Close old rows where tracked columns have changed
+    delta_table.alias("existing") \
+        .merge(
+            df_silver_officer_client_mapping.alias("incoming"),
+            "existing.OfficerID = incoming.OfficerID AND \
+             existing.ClientID = incoming.ClientID AND \
+             existing.IsCurrent = true"
+        ) \
+        .whenMatchedUpdate(
+            condition="""
+                existing.IsActive != incoming.IsActive OR
+                existing.officer_status_at_load != incoming.officer_status_at_load
+            """,
+            set={
+                "EffectiveEndDate" : F.current_date(),
+                "IsCurrent"        : F.lit(False)
+            }
+        ) \
+        .execute()
+
+    # Step 2: Insert new rows for changed records and brand new records
+    # We insert all incoming records that do not already exist as current
+    existing_current = delta_table.toDF().filter(F.col("IsCurrent") == True)
+
+    new_rows = df_silver_officer_client_mapping.join(
+        existing_current.select("OfficerID", "ClientID", "IsActive", "officer_status_at_load"),
+        on=["OfficerID", "ClientID"],
+        how="left_anti"
+    )
+
+    changed_rows = df_silver_officer_client_mapping.join(
+        existing_current.select(
+            "OfficerID", "ClientID", "IsActive", "officer_status_at_load"
+        ).withColumnRenamed("IsActive", "existing_IsActive") \
+         .withColumnRenamed("officer_status_at_load", "existing_officer_status"),
+        on=["OfficerID", "ClientID"],
+        how="inner"
+    ).filter(
+        (F.col("IsActive") != F.col("existing_IsActive")) |
+        (F.col("officer_status_at_load") != F.col("existing_officer_status"))
+    ).drop("existing_IsActive", "existing_officer_status")
+
+    rows_to_insert = new_rows.union(changed_rows)
+
+    if rows_to_insert.count() > 0:
+        rows_to_insert.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable("silver_officer_client_mapping")
+
+    print("Step 8.2 - Subsequent run: silver_officer_client_mapping merged.")
+
+# Verify write
+count = spark.table("silver_officer_client_mapping").count()
+print(f"Step 8.2 complete - silver_officer_client_mapping written.")
+print(f"  Rows in table : {count}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 8.3** - Write `silver_debtor_loan_collateral` (Delta merge SCD Type 2)
+
+
+# CELL ********************
+
+# --- Step 8.3: Write silver_debtor_loan_collateral ---
+# Strategy: Delta merge with SCD Type 2 logic.
+# Natural key: DebtorID + LoanID + CollateralID composite.
+# Tracked column: LoanStatus.
+# On first run: write entire DataFrame as new table.
+# On subsequent runs: merge incoming records against existing table.
+#   - Match found + LoanStatus changed:
+#       Close old row (EffectiveEndDate = today, IsCurrent = False)
+#       Insert new row (new EffectiveStartDate, IsCurrent = True)
+#   - No match found: insert as new record.
+
+table_exists_dlc = spark.catalog.tableExists("silver_debtor_loan_collateral")
+
+if not table_exists_dlc:
+    # First run: write entire DataFrame as new table
+    df_silver_debtor_loan_collateral.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .saveAsTable("silver_debtor_loan_collateral")
+    print("Step 8.3 - First run: silver_debtor_loan_collateral created.")
+
+else:
+    # Subsequent runs: Delta merge with SCD Type 2 logic
+    delta_table_dlc = DeltaTable.forName(spark, "silver_debtor_loan_collateral")
+
+    # Step 1: Close old rows where LoanStatus has changed
+    delta_table_dlc.alias("existing") \
+        .merge(
+            df_silver_debtor_loan_collateral.alias("incoming"),
+            "existing.DebtorID = incoming.DebtorID AND \
+             existing.LoanID = incoming.LoanID AND \
+             existing.CollateralID = incoming.CollateralID AND \
+             existing.IsCurrent = true"
+        ) \
+        .whenMatchedUpdate(
+            condition="existing.LoanStatus != incoming.LoanStatus",
+            set={
+                "EffectiveEndDate" : F.current_date(),
+                "IsCurrent"        : F.lit(False)
+            }
+        ) \
+        .execute()
+
+    # Step 2: Insert new rows for changed and brand new records
+    existing_current_dlc = delta_table_dlc.toDF().filter(
+        F.col("IsCurrent") == True
+    )
+
+    new_rows_dlc = df_silver_debtor_loan_collateral.join(
+        existing_current_dlc.select("DebtorID", "LoanID", "CollateralID", "LoanStatus"),
+        on=["DebtorID", "LoanID", "CollateralID"],
+        how="left_anti"
+    )
+
+    changed_rows_dlc = df_silver_debtor_loan_collateral.join(
+        existing_current_dlc.select(
+            "DebtorID", "LoanID", "CollateralID", "LoanStatus"
+        ).withColumnRenamed("LoanStatus", "existing_LoanStatus"),
+        on=["DebtorID", "LoanID", "CollateralID"],
+        how="inner"
+    ).filter(
+        F.col("LoanStatus") != F.col("existing_LoanStatus")
+    ).drop("existing_LoanStatus")
+
+    rows_to_insert_dlc = new_rows_dlc.union(changed_rows_dlc)
+
+    if rows_to_insert_dlc.count() > 0:
+        rows_to_insert_dlc.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable("silver_debtor_loan_collateral")
+
+    print("Step 8.3 - Subsequent run: silver_debtor_loan_collateral merged.")
+
+# Verify write
+count = spark.table("silver_debtor_loan_collateral").count()
+print(f"Step 8.3 complete - silver_debtor_loan_collateral written.")
+print(f"  Rows in table : {count}")
+print(f"  Expected      : 300")
+print(f"  Match         : {count == 300}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 8.4** - Write `silver_bank_balance_update` (append with watermark)
+
+
+# CELL ********************
+
+# --- Step 8.4: Write silver_bank_balance_update ---
+# Strategy: append with watermark on ReportingDate.
+# Rationale: timeseries data. New balance files arrive daily from client banks.
+# Historical records must be preserved for trend analysis and audit.
+# Watermark prevents duplicate records accumulating across pipeline runs.
+# On first run: write entire DataFrame as new table.
+# On subsequent runs: append only records where ReportingDate
+# exceeds the maximum ReportingDate already in the Silver table.
+
+table_exists_balance = spark.catalog.tableExists("silver_bank_balance_update")
+
+if not table_exists_balance:
+    # First run: write entire DataFrame as new table
+    df_silver_bank_balance_update.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .saveAsTable("silver_bank_balance_update")
+    print("Step 8.4 - First run: silver_bank_balance_update created.")
+
+else:
+    # Subsequent runs: append with watermark
+    max_reporting_date = spark.table("silver_bank_balance_update") \
+        .agg(F.max("ReportingDate")).collect()[0][0]
+
+    print(f"Step 8.4 - Watermark: max ReportingDate in Silver = {max_reporting_date}")
+
+    new_records = df_silver_bank_balance_update.filter(
+        F.col("ReportingDate") > max_reporting_date
+    )
+
+    new_count = new_records.count()
+    print(f"Step 8.4 - New records to append: {new_count}")
+
+    if new_count > 0:
+        new_records.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable("silver_bank_balance_update")
+
+    print("Step 8.4 - Subsequent run: silver_bank_balance_update appended.")
+
+# Verify write
+count = spark.table("silver_bank_balance_update").count()
+print(f"Step 8.4 complete - silver_bank_balance_update written.")
+print(f"  Rows in table : {count}")
+print(f"  Expected      : 956")
+print(f"  Match         : {count == 956}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ### **Step 8.5** - Write `silver_market_prices` (append with watermark)
+
+# CELL ********************
+
+# --- Step 8.5: Write silver_market_prices ---
+# Strategy: append with watermark on PriceDate.
+# Rationale: timeseries data. New price records arrive daily from yfinance.
+# Historical price records must be preserved for collateral value trend
+# analysis in the Power BI Risk Command Centre dashboard.
+# Watermark prevents duplicate price records accumulating across runs.
+# On first run: write entire DataFrame as new table.
+# On subsequent runs: append only records where PriceDate
+# exceeds the maximum PriceDate already in the Silver table.
+
+table_exists_prices = spark.catalog.tableExists("silver_market_prices")
+
+if not table_exists_prices:
+    # First run: write entire DataFrame as new table
+    df_silver_market_prices.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .option("overwriteSchema", "true") \
+        .saveAsTable("silver_market_prices")
+    print("Step 8.5 - First run: silver_market_prices created.")
+
+else:
+    # Subsequent runs: append with watermark
+    max_price_date = spark.table("silver_market_prices") \
+        .agg(F.max("PriceDate")).collect()[0][0]
+
+    print(f"Step 8.5 - Watermark: max PriceDate in Silver = {max_price_date}")
+
+    new_records = df_silver_market_prices.filter(
+        F.col("PriceDate") > max_price_date
+    )
+
+    new_count = new_records.count()
+    print(f"Step 8.5 - New records to append: {new_count}")
+
+    if new_count > 0:
+        new_records.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable("silver_market_prices")
+
+    print("Step 8.5 - Subsequent run: silver_market_prices appended.")
+
+# Verify write
+count = spark.table("silver_market_prices").count()
+print(f"Step 8.5 complete - silver_market_prices written.")
+print(f"  Rows in table  : {count}")
+print(f"  Expected       : 1888")
+print(f"  Match          : {count == 1888}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+silver_tables = [
+    "silver_collections_officer",
+    "silver_officer_client_mapping",
+    "silver_debtor_loan_collateral",
+    "silver_bank_balance_update",
+    "silver_market_prices"
+]
+
+print("=" * 55)
+print("SILVER LAYER - ALL TABLES VERIFICATION")
+print("=" * 55)
+for table in silver_tables:
+    count = spark.table(table).count()
+    print(f"  {table:<40} {count:>6} rows")
+print("=" * 55)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
