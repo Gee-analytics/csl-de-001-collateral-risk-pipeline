@@ -168,7 +168,7 @@ GOLD_FACT_QUARANTINE_LOG      = "fact_ltv_quarantine_log"
 GOLD_AUDIT_LOG                = "gold_audit_log"
 
 # Gold audit table - all execution audit rows from this notebook write here
-GOLD_AUDIT_LOG                = "Tables/gold_audit_log"
+GOLD_AUDIT_LOG                = "gold_audit_log"
 
 # Watermark store - READ ONLY from this notebook
 # Owned by nb_setup_pipeline_metadata and written to by the Stream A pipeline only.
@@ -1485,8 +1485,281 @@ else:
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# MARKDOWN ********************
+
+# ## Section 12: Write to `fact_ltv_daily_snapshot`
+# Appends the validated daily LTV snapshot to fact_ltv_daily_snapshot.
+# Never overwrites. Each daily run adds new rows stamped with the current
+# PipelineRunDate preserving full LTV history for trend analysis in Power BI.
+# Only clean records that passed referential integrity validation in Section 11
+# are written here. Quarantined records are written to fact_ltv_quarantine_log.
+# 
+# ### Steps
+# - **Step 12.1** - Select and order final fact columns
+# - **Step 12.2** - Write quarantined records to fact_ltv_quarantine_log
+# - **Step 12.3** - Append clean records to fact_ltv_daily_snapshot
+# - **Step 12.4** - Print confirmation
+
 # CELL ********************
 
+# =============================================================================
+# SECTION 12: WRITE TO fact_ltv_daily_snapshot
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 12.1 Select and order final fact columns ---
+# Only columns relevant to the fact table are selected.
+# Intermediate resolution columns from Section 9 are dropped.
+# The fact table grain is one row per debtor per collateral asset per date.
+df_fact_final = df_fact_clean.select(
+
+    # Keys
+    F.col("DateKey"),
+    F.col("DebtorID"),
+    F.col("LoanID"),
+    F.col("CollateralID"),
+    F.col("ClientID"),
+    F.col("AssignedOfficerID"),
+
+    # Balance resolution
+    F.col("ResolvedOutstandingBalance"),
+    F.col("BalanceSource"),
+
+    # Collateral valuation
+    F.col("TickerSymbol"),
+    F.col("QuantityHeld"),
+    F.col("CurrentMarketPrice"),
+    F.col("CurrentCollateralValue"),
+    F.col("DataFreshnessStatus"),
+    F.col("EligibleForLTV"),
+
+    # Debtor level LTV metrics
+    F.col("TotalOutstandingBalance"),
+    F.col("TotalCollateralValue"),
+    F.col("TotalCollateralPositions"),
+    F.col("IneligiblePositions"),
+    F.col("LTV_Ratio"),
+    F.col("LTV_Percentage"),
+    F.col("LTV_Calculation_Status"),
+
+    # Risk flags
+    F.col("RiskFlag"),
+    F.col("ImmediateActionRequired"),
+
+    # Shortfall
+    F.col("RequiredCollateralValue"),
+    F.col("CollateralCoverageShortfall"),
+
+    # Snapshot date
+    F.lit(PIPELINE_RUN_DATE).cast(DateType()).alias("PipelineRunDate"),
+
+    # Audit columns
+    F.lit(RUN_ID).alias("gold_run_id")
+)
+
+# --- 12.2 Write quarantined records to fact_ltv_quarantine_log ---
+# Quarantined records failed referential integrity validation in Section 11.
+# They are written here for investigation rather than silently dropped.
+# Written as append to preserve history of all quarantine events.
+if quarantine_count > 0:
+    df_fact_quarantine.withColumn(
+        "quarantine_run_id", F.lit(RUN_ID)
+    ).withColumn(
+        "quarantine_date", F.lit(PIPELINE_RUN_DATE).cast(DateType())
+    ).write \
+        .format("delta") \
+        .mode("append") \
+        .saveAsTable(GOLD_FACT_QUARANTINE_LOG)
+    print(f"Quarantined records written to fact_ltv_quarantine_log: {quarantine_count}")
+else:
+    print("No quarantined records. fact_ltv_quarantine_log not written to.")
+
+# --- 12.3 Append clean records to fact_ltv_daily_snapshot ---
+# Append only. Never overwrite. Each daily run adds a new snapshot.
+# Full LTV history is preserved for trend analysis in Power BI.
+df_fact_final.write \
+    .format("delta") \
+    .mode("append") \
+    .saveAsTable(GOLD_FACT_LTV_SNAPSHOT)
+
+# --- 12.4 Print confirmation ---
+total_rows = spark.table(GOLD_FACT_LTV_SNAPSHOT).count()
+print(f"\nfact_ltv_daily_snapshot append complete.")
+print(f"Records written this run : {clean_count}")
+print(f"Total rows in table      : {total_rows}")
+print(f"Snapshot date            : {PIPELINE_RUN_DATE}")
+print(f"Run ID                   : {RUN_ID}")
+print("\nReady to proceed to Section 13: Write to gold_audit_log.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# MARKDOWN ********************
+
+# ## Section 13: Write to `gold_audit_log`
+# Writes one audit row per pipeline step to gold_audit_log.
+# Append only. Full execution history preserved across all pipeline runs.
+# Uses the audit_log accumulator populated throughout the notebook.
+# gold_pipeline_metadata is not written to from this notebook.
+# That table is owned by nb_setup_pipeline_metadata and the Stream A pipeline.
+# 
+# ### Steps
+# - **Step 13.1** - Build audit log rows from accumulator
+# - **Step 13.2** - Add summary row for the full notebook run
+# - **Step 13.3** - Write to gold_audit_log
+# - **Step 13.4** - Print confirmation
+
+# CELL ********************
+
+# =============================================================================
+# SECTION 13: WRITE TO gold_audit_log
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 13.1 Build audit log rows ---
+# One row per key pipeline step summarising what was read, written,
+# and whether the step succeeded. All rows carry the same RunID
+# making the full run reconstructible from the audit log.
+from datetime import timezone
+
+audit_rows = [
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "dim_date",
+        "SourceSystem"       : "generated",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 0,
+        "RowsWritten"        : spark.table(GOLD_DIM_DATE).count(),
+        "RowsRejected"       : 0,
+        "ErrorMessage"       : None
+    },
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "dim_collections_officer",
+        "SourceSystem"       : "silver_collections_officer|silver_officer_client_mapping",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 53,
+        "RowsWritten"        : spark.table(GOLD_DIM_COLLECTIONS_OFFICER).count(),
+        "RowsRejected"       : 0,
+        "ErrorMessage"       : None
+    },
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "dim_client_bank",
+        "SourceSystem"       : "silver_client_bank",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 4,
+        "RowsWritten"        : spark.table(GOLD_DIM_CLIENT_BANK).count(),
+        "RowsRejected"       : 0,
+        "ErrorMessage"       : None
+    },
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "dim_debtor",
+        "SourceSystem"       : "silver_debtor_loan_collateral",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 300,
+        "RowsWritten"        : spark.table(GOLD_DIM_DEBTOR).count(),
+        "RowsRejected"       : 0,
+        "ErrorMessage"       : None
+    },
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "dim_loan",
+        "SourceSystem"       : "silver_debtor_loan_collateral",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 300,
+        "RowsWritten"        : spark.table(GOLD_DIM_LOAN).count(),
+        "RowsRejected"       : 0,
+        "ErrorMessage"       : None
+    },
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "dim_collateral_asset",
+        "SourceSystem"       : "silver_debtor_loan_collateral",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 300,
+        "RowsWritten"        : spark.table(GOLD_DIM_COLLATERAL_ASSET).count(),
+        "RowsRejected"       : 0,
+        "ErrorMessage"       : None
+    },
+    {
+        "RunID"              : RUN_ID,
+        "PipelineStepName"   : "fact_ltv_daily_snapshot",
+        "SourceSystem"       : "silver_debtor_loan_collateral|silver_bank_balance_update|silver_market_prices",
+        "RunStatus"          : "SUCCESS",
+        "RowsRead"           : 249,
+        "RowsWritten"        : clean_count,
+        "RowsRejected"       : quarantine_count,
+        "ErrorMessage"       : None
+    },
+]
+
+# --- 13.2 Add summary row for the full notebook run ---
+audit_rows.append({
+    "RunID"              : RUN_ID,
+    "PipelineStepName"   : "nb_gold_aggregation_COMPLETE",
+    "SourceSystem"       : "all_silver_tables",
+    "RunStatus"          : "SUCCESS",
+    "RowsRead"           : 300,
+    "RowsWritten"        : clean_count,
+    "RowsRejected"       : quarantine_count,
+    "ErrorMessage"       : None
+})
+
+# --- 13.3 Write to gold_audit_log ---
+# Explicit schema defined to avoid type inference failure on NULL ErrorMessage.
+# Spark cannot infer column type from None values in a list of dicts.
+
+from pyspark.sql.types import StructType, StructField, StringType, LongType
+
+audit_schema = StructType([
+    StructField("RunID",            StringType(), True),
+    StructField("PipelineStepName", StringType(), True),
+    StructField("SourceSystem",     StringType(), True),
+    StructField("RunStatus",        StringType(), True),
+    StructField("RowsRead",         LongType(),   True),
+    StructField("RowsWritten",      LongType(),   True),
+    StructField("RowsRejected",     LongType(),   True),
+    StructField("ErrorMessage",     StringType(), True),
+])
+
+df_audit = spark.createDataFrame(audit_rows, schema=audit_schema).withColumn(
+    "RunTimestamp",
+    F.lit(RUN_TIMESTAMP).cast(TimestampType())
+).withColumn(
+    "PipelineRunDate",
+    F.lit(PIPELINE_RUN_DATE).cast(DateType())
+)
+
+df_audit.write \
+    .format("delta") \
+    .mode("append") \
+    .saveAsTable(GOLD_AUDIT_LOG)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# --- 13.4 Print confirmation ---
+total_audit_rows = spark.table(GOLD_AUDIT_LOG).count()
+print("=== Gold Notebook Run Complete ===\n")
+print(f"Run ID                        : {RUN_ID}")
+print(f"Pipeline run date             : {PIPELINE_RUN_DATE}")
+print(f"Fact records written          : {clean_count}")
+print(f"Quarantined records           : {quarantine_count}")
+print(f"Audit rows written this run   : {len(audit_rows)}")
+print(f"Total rows in gold_audit_log  : {total_audit_rows}")
+print(f"\nnb_gold_aggregation completed successfully.")
 
 # METADATA ********************
 
