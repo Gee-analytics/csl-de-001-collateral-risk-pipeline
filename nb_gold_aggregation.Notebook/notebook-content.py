@@ -47,7 +47,8 @@
 # ### Outputs
 # | Table | Type | Write Strategy |
 # |---|---|---|
-# | `fact_ltv_daily_snapshot` | Fact | Append |
+# | `fact_ltv_daily_snapshot` | Fact | Append with idempotency guard |
+# | `fact_market_prices_daily` | Fact | Overwrite first run, watermark append |
 # | `dim_debtor` | Dimension | SCD Type 2 merge |
 # | `dim_loan` | Dimension | SCD Type 2 merge |
 # | `dim_collateral_asset` | Dimension | SCD Type 2 merge |
@@ -70,6 +71,7 @@
 # - **Section 11** - Referential integrity validation
 # - **Section 12** - Write to `fact_ltv_daily_snapshot`
 # - **Section 13** - Write to `gold_audit_log`
+# - **Section 14** - Populate `fact_market_prices_daily`
 
 
 # MARKDOWN ********************
@@ -1508,9 +1510,6 @@ else:
 # =============================================================================
 
 # --- 12.1 Select and order final fact columns ---
-# Only columns relevant to the fact table are selected.
-# Intermediate resolution columns from Section 9 are dropped.
-# The fact table grain is one row per debtor per collateral asset per date.
 df_fact_final = df_fact_clean.select(
 
     # Keys
@@ -1558,9 +1557,6 @@ df_fact_final = df_fact_clean.select(
 )
 
 # --- 12.2 Write quarantined records to fact_ltv_quarantine_log ---
-# Quarantined records failed referential integrity validation in Section 11.
-# They are written here for investigation rather than silently dropped.
-# Written as append to preserve history of all quarantine events.
 if quarantine_count > 0:
     df_fact_quarantine.withColumn(
         "quarantine_run_id", F.lit(RUN_ID)
@@ -1574,28 +1570,24 @@ if quarantine_count > 0:
 else:
     print("No quarantined records. fact_ltv_quarantine_log not written to.")
 
-# --- 12.3 Idempotency guard ---
-# Delete any existing rows for today's PipelineRunDate before appending.
-# Ensures the notebook can be safely rerun on the same day without
-# producing duplicate snapshot records in the fact table.
-# This implements the delete-then-insert pattern for idempotent appends.
-
+# --- 12.3 Idempotency guard: delete existing rows for today before appending ---
+# Prevents duplicate snapshot rows if the notebook is rerun on the same day.
+# Delete-then-insert pattern makes the append idempotent.
+# Without this guard, rerunning on the same day doubles every metric in Power BI.
 if spark.catalog.tableExists(GOLD_FACT_LTV_SNAPSHOT):
-    spark.sql(f"""
-        DELETE FROM {GOLD_FACT_LTV_SNAPSHOT}
+    deleted = spark.sql(f"""
+        DELETE FROM fact_ltv_daily_snapshot
         WHERE PipelineRunDate = '{PIPELINE_RUN_DATE}'
     """)
     print(f"Idempotency guard: deleted existing rows for {PIPELINE_RUN_DATE}")
 
-# --- 12.3 Append clean records to fact_ltv_daily_snapshot ---
-# Append only. Never overwrite. Each daily run adds a new snapshot.
-# Full LTV history is preserved for trend analysis in Power BI.
+# --- 12.4 Append clean records to fact_ltv_daily_snapshot ---
 df_fact_final.write \
     .format("delta") \
     .mode("append") \
     .saveAsTable(GOLD_FACT_LTV_SNAPSHOT)
 
-# --- 12.4 Print confirmation ---
+# --- 12.5 Print confirmation ---
 total_rows = spark.table(GOLD_FACT_LTV_SNAPSHOT).count()
 print(f"\nfact_ltv_daily_snapshot append complete.")
 print(f"Records written this run : {clean_count}")
@@ -1634,102 +1626,105 @@ print("\nReady to proceed to Section 13: Write to gold_audit_log.")
 # =============================================================================
 
 # --- 13.1 Build audit log rows ---
-# One row per key pipeline step summarising what was read, written,
-# and whether the step succeeded. All rows carry the same RunID
-# making the full run reconstructible from the audit log.
-from datetime import timezone
+from pyspark.sql.types import StructType, StructField, StringType, LongType
 
 audit_rows = [
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "dim_date",
-        "SourceSystem"       : "generated",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 0,
-        "RowsWritten"        : spark.table(GOLD_DIM_DATE).count(),
-        "RowsRejected"       : 0,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "dim_date",
+        "SourceSystem"     : "generated",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 0,
+        "RowsWritten"      : spark.table(GOLD_DIM_DATE).count(),
+        "RowsRejected"     : 0,
+        "ErrorMessage"     : None
     },
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "dim_collections_officer",
-        "SourceSystem"       : "silver_collections_officer|silver_officer_client_mapping",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 53,
-        "RowsWritten"        : spark.table(GOLD_DIM_COLLECTIONS_OFFICER).count(),
-        "RowsRejected"       : 0,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "dim_collections_officer",
+        "SourceSystem"     : "silver_collections_officer|silver_officer_client_mapping",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 53,
+        "RowsWritten"      : spark.table(GOLD_DIM_COLLECTIONS_OFFICER).count(),
+        "RowsRejected"     : 0,
+        "ErrorMessage"     : None
     },
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "dim_client_bank",
-        "SourceSystem"       : "silver_client_bank",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 4,
-        "RowsWritten"        : spark.table(GOLD_DIM_CLIENT_BANK).count(),
-        "RowsRejected"       : 0,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "dim_client_bank",
+        "SourceSystem"     : "silver_client_bank",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 4,
+        "RowsWritten"      : spark.table(GOLD_DIM_CLIENT_BANK).count(),
+        "RowsRejected"     : 0,
+        "ErrorMessage"     : None
     },
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "dim_debtor",
-        "SourceSystem"       : "silver_debtor_loan_collateral",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 300,
-        "RowsWritten"        : spark.table(GOLD_DIM_DEBTOR).count(),
-        "RowsRejected"       : 0,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "dim_debtor",
+        "SourceSystem"     : "silver_debtor_loan_collateral",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 300,
+        "RowsWritten"      : spark.table(GOLD_DIM_DEBTOR).count(),
+        "RowsRejected"     : 0,
+        "ErrorMessage"     : None
     },
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "dim_loan",
-        "SourceSystem"       : "silver_debtor_loan_collateral",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 300,
-        "RowsWritten"        : spark.table(GOLD_DIM_LOAN).count(),
-        "RowsRejected"       : 0,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "dim_loan",
+        "SourceSystem"     : "silver_debtor_loan_collateral",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 300,
+        "RowsWritten"      : spark.table(GOLD_DIM_LOAN).count(),
+        "RowsRejected"     : 0,
+        "ErrorMessage"     : None
     },
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "dim_collateral_asset",
-        "SourceSystem"       : "silver_debtor_loan_collateral",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 300,
-        "RowsWritten"        : spark.table(GOLD_DIM_COLLATERAL_ASSET).count(),
-        "RowsRejected"       : 0,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "dim_collateral_asset",
+        "SourceSystem"     : "silver_debtor_loan_collateral",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 300,
+        "RowsWritten"      : spark.table(GOLD_DIM_COLLATERAL_ASSET).count(),
+        "RowsRejected"     : 0,
+        "ErrorMessage"     : None
     },
     {
-        "RunID"              : RUN_ID,
-        "PipelineStepName"   : "fact_ltv_daily_snapshot",
-        "SourceSystem"       : "silver_debtor_loan_collateral|silver_bank_balance_update|silver_market_prices",
-        "RunStatus"          : "SUCCESS",
-        "RowsRead"           : 249,
-        "RowsWritten"        : clean_count,
-        "RowsRejected"       : quarantine_count,
-        "ErrorMessage"       : None
+        "RunID"            : RUN_ID,
+        "PipelineStepName" : "fact_ltv_daily_snapshot",
+        "SourceSystem"     : "silver_debtor_loan_collateral|silver_bank_balance_update|silver_market_prices",
+        "RunStatus"        : "SUCCESS",
+        "RowsRead"         : 249,
+        "RowsWritten"      : clean_count,
+        "RowsRejected"     : quarantine_count,
+        "ErrorMessage"     : None
     },
+
+    {
+    "RunID"            : RUN_ID,
+    "PipelineStepName" : "fact_market_prices_daily",
+    "SourceSystem"     : "silver_market_prices",
+    "RunStatus"        : "SUCCESS",
+    "RowsRead"         : 1888,
+    "RowsWritten"      : spark.table(GOLD_FACT_MARKET_PRICES).count(),
+    "RowsRejected"     : 0,
+    "ErrorMessage"     : None
+},
+
 ]
 
-# --- 13.2 Add summary row for the full notebook run ---
 audit_rows.append({
-    "RunID"              : RUN_ID,
-    "PipelineStepName"   : "nb_gold_aggregation_COMPLETE",
-    "SourceSystem"       : "all_silver_tables",
-    "RunStatus"          : "SUCCESS",
-    "RowsRead"           : 300,
-    "RowsWritten"        : clean_count,
-    "RowsRejected"       : quarantine_count,
-    "ErrorMessage"       : None
+    "RunID"            : RUN_ID,
+    "PipelineStepName" : "nb_gold_aggregation_COMPLETE",
+    "SourceSystem"     : "all_silver_tables",
+    "RunStatus"        : "SUCCESS",
+    "RowsRead"         : 300,
+    "RowsWritten"      : clean_count,
+    "RowsRejected"     : quarantine_count,
+    "ErrorMessage"     : None
 })
 
-# --- 13.3 Write to gold_audit_log ---
-# Explicit schema defined to avoid type inference failure on NULL ErrorMessage.
-# Spark cannot infer column type from None values in a list of dicts.
-
-from pyspark.sql.types import StructType, StructField, StringType, LongType
-
+# --- 13.2 Add summary row for the full notebook run ---
 audit_schema = StructType([
     StructField("RunID",            StringType(), True),
     StructField("PipelineStepName", StringType(), True),
@@ -1749,10 +1744,33 @@ df_audit = spark.createDataFrame(audit_rows, schema=audit_schema).withColumn(
     F.lit(PIPELINE_RUN_DATE).cast(DateType())
 )
 
+# --- 13.3 Idempotency guard: delete existing audit rows for this RunID ---
+# Prevents duplicate audit rows if the notebook is rerun in the same session.
+# Deletes on RunID not PipelineRunDate because a rerun generates a new RunID.
+# Deleting on RunID ensures only rows from this exact execution are replaced.
+if spark.catalog.tableExists(GOLD_AUDIT_LOG):
+    spark.sql(f"""
+        DELETE FROM gold_audit_log
+        WHERE RunID = '{RUN_ID}'
+    """)
+    print(f"Idempotency guard: cleared existing audit rows for RunID {RUN_ID}")
+
+# --- 13.4 Write to gold_audit_log ---
 df_audit.write \
     .format("delta") \
     .mode("append") \
     .saveAsTable(GOLD_AUDIT_LOG)
+
+# --- 13.5 Print confirmation ---
+total_audit_rows = spark.table(GOLD_AUDIT_LOG).count()
+print("=== Gold Notebook Run Complete ===\n")
+print(f"Run ID                        : {RUN_ID}")
+print(f"Pipeline run date             : {PIPELINE_RUN_DATE}")
+print(f"Fact records written          : {clean_count}")
+print(f"Quarantined records           : {quarantine_count}")
+print(f"Audit rows written this run   : {len(audit_rows)}")
+print(f"Total rows in gold_audit_log  : {total_audit_rows}")
+print(f"\nnb_gold_aggregation completed successfully.")
 
 # METADATA ********************
 
@@ -1763,16 +1781,148 @@ df_audit.write \
 
 # CELL ********************
 
-# --- 13.4 Print confirmation ---
-total_audit_rows = spark.table(GOLD_AUDIT_LOG).count()
-print("=== Gold Notebook Run Complete ===\n")
-print(f"Run ID                        : {RUN_ID}")
-print(f"Pipeline run date             : {PIPELINE_RUN_DATE}")
-print(f"Fact records written          : {clean_count}")
-print(f"Quarantined records           : {quarantine_count}")
-print(f"Audit rows written this run   : {len(audit_rows)}")
-print(f"Total rows in gold_audit_log  : {total_audit_rows}")
-print(f"\nnb_gold_aggregation completed successfully.")
+# MAGIC %%sql
+# MAGIC SELECT RunID, PipelineRunDate, COUNT(*) as row_count
+# MAGIC FROM gold_audit_log
+# MAGIC GROUP BY RunID, PipelineRunDate
+# MAGIC ORDER BY PipelineRunDate
+
+# METADATA ********************
+
+# META {
+# META   "language": "sparksql",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": false,
+# META   "editable": true
+# META }
+
+# MARKDOWN ********************
+
+# ## Section 14: Populate `fact_market_prices_daily`
+# Promotes silver_market_prices into Gold as a dedicated price history fact table.
+# Enables the collateral value trend chart in the Power BI Risk Command Centre
+# as specified in the project brief Section 3.3.
+# 
+# Without this table Power BI can only see prices for dates where LTV was
+# calculated. The full 365 day price history in silver_market_prices would
+# be invisible to the dashboard.
+# 
+# Grain: one row per ticker per price date.
+# 
+# First run: full overwrite loading all 1,888 rows of Silver history.
+# Subsequent runs: append only new PriceDates using watermark logic.
+# Idempotency guard: deletes any existing rows for the current watermark
+# range before appending to prevent duplicates on reruns.
+# 
+# ### Steps
+# - **Step 14.1** - Check if fact_market_prices_daily exists
+# - **Step 14.2** - First run: full overwrite of all Silver price history
+# - **Step 14.3** - Subsequent runs: resolve watermark and filter new records
+# - **Step 14.4** - Idempotency guard: delete rows in watermark range
+# - **Step 14.5** - Append new records
+# - **Step 14.6** - Print confirmation
+
+
+# CELL ********************
+
+# =============================================================================
+# SECTION 14: POPULATE fact_market_prices_daily
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 14.1 Check if fact_market_prices_daily exists ---
+# First run: full overwrite loading complete Silver price history.
+# Subsequent runs: watermark-based append of new PriceDates only.
+# This pattern is consistent with the Bronze incremental load strategy.
+
+GOLD_FACT_MARKET_PRICES = "fact_market_prices_daily"
+GOLD_FACT_MARKET_PRICES_READ = "Tables/dbo/fact_market_prices_daily"
+
+fact_prices_exists = spark.catalog.tableExists(GOLD_FACT_MARKET_PRICES)
+print(f"fact_market_prices_daily exists: {fact_prices_exists}")
+
+# --- 14.2 Build the Gold market prices DataFrame from Silver ---
+# Select and rename columns for Gold layer consistency.
+# DateKey added for joining to dim_date in Power BI.
+# Audit columns added for lineage tracking.
+
+df_gold_market_prices = df_market_prices.select(
+    # Date key for dim_date join
+    F.date_format(F.col("PriceDate"), "yyyyMMdd")
+     .cast(IntegerType()).alias("DateKey"),
+    F.col("PriceDate"),
+    F.col("TickerSymbol"),
+    F.col("AssetType"),
+    F.col("Open").alias("OpenPrice"),
+    F.col("High").alias("HighPrice"),
+    F.col("Low").alias("LowPrice"),
+    F.col("Close").alias("ClosePrice"),
+    F.col("Volume"),
+    # Audit columns
+    F.lit(PIPELINE_RUN_DATE).cast(DateType()).alias("gold_load_date"),
+    F.lit(RUN_ID).alias("gold_run_id")
+)
+
+if not fact_prices_exists:
+
+    # --- 14.2 First run: full overwrite ---
+    # Loads complete 365 day price history from Silver into Gold.
+    # Overwrite ensures a clean start with no partial or corrupt state.
+    df_gold_market_prices.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .saveAsTable(GOLD_FACT_MARKET_PRICES)
+
+    row_count = spark.table(GOLD_FACT_MARKET_PRICES).count()
+    print(f"First run: full overwrite complete. Rows written: {row_count}")
+
+else:
+
+    # --- 14.3 Subsequent runs: resolve watermark ---
+    # Find the maximum PriceDate already in fact_market_prices_daily.
+    # Only records in Silver with PriceDate greater than this watermark
+    # are new and need to be appended.
+    watermark_value = spark.table(GOLD_FACT_MARKET_PRICES) \
+        .agg(F.max("PriceDate")).collect()[0][0]
+
+    print(f"Current watermark (max PriceDate in Gold): {watermark_value}")
+
+    df_new_prices = df_gold_market_prices.filter(
+        F.col("PriceDate") > F.lit(watermark_value)
+    )
+
+    new_record_count = df_new_prices.count()
+    print(f"New price records to append: {new_record_count}")
+
+    if new_record_count > 0:
+
+        # --- 14.4 Idempotency guard ---
+        # Delete any existing rows for the new PriceDates before appending.
+        # Prevents duplicates if the notebook is rerun on the same day
+        # after new Silver prices have landed.
+        spark.sql(f"""
+            DELETE FROM fact_market_prices_daily
+            WHERE PriceDate > '{watermark_value}'
+        """)
+        print(f"Idempotency guard: cleared rows where PriceDate > {watermark_value}")
+
+        # --- 14.5 Append new records ---
+        df_new_prices.write \
+            .format("delta") \
+            .mode("append") \
+            .saveAsTable(GOLD_FACT_MARKET_PRICES)
+
+        row_count = spark.table(GOLD_FACT_MARKET_PRICES).count()
+        print(f"Append complete. New rows added: {new_record_count}")
+        print(f"Total rows in fact_market_prices_daily: {row_count}")
+
+    else:
+        print("No new price records found beyond watermark. Nothing to append.")
+
+# --- 14.6 Print confirmation ---
+total = spark.table(GOLD_FACT_MARKET_PRICES).count()
+print(f"\nfact_market_prices_daily total rows: {total}")
+print("Ready to proceed to Section 13: Write to gold_audit_log.")
 
 # METADATA ********************
 
