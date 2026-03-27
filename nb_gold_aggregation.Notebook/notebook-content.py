@@ -830,14 +830,106 @@ print("Ready to proceed to Section 8: Populate dim_collateral_asset.")
 
 # MARKDOWN ********************
 
-# ### **Step 1.6** - Silver input table paths
+# ## Section 8: Populate `dim_collateral_asset` with SCD Type 2
+# Builds the collateral asset dimension from `silver_debtor_loan_collateral`.
+# Deduplicates on CollateralID. Collateral is the finest grain in the Silver
+# table so every row represents a unique collateral asset. 300 distinct
+# CollateralIDs confirmed via SQL query before this section was built.
+# SCD Type 2 tracks changes to collateral attributes over time.
+# 
+# ### Steps
+# - **Step 8.1** - Filter to IsCurrent = True and deduplicate on CollateralID
+# - **Step 8.2** - Generate CollateralSurrogateKey as SHA-256 hash
+# - **Step 8.3** - Select and order final columns
+# - **Step 8.4** - Apply SCD Type 2 merge into dim_collateral_asset
+# - **Step 8.5** - Print confirmation
+
+# CELL ********************
+
+# =============================================================================
+# SECTION 8: POPULATE dim_collateral_asset WITH SCD TYPE 2
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 8.1 Filter to IsCurrent = True and deduplicate on CollateralID ---
+# 300 distinct CollateralIDs confirmed via SQL query before this section was built.
+# Collateral is the finest grain in silver_debtor_loan_collateral so deduplication
+# will not collapse any rows here but the pattern is applied for consistency.
+
+window_collateral = Window.partitionBy("CollateralID").orderBy(F.col("EffectiveStartDate").desc())
+
+df_collateral_deduped = df_debtor_loan_collateral.filter(
+    F.col("IsCurrent") == True
+).withColumn(
+    "row_num", F.row_number().over(window_collateral)
+).filter(
+    F.col("row_num") == 1
+).drop("row_num")
+
+# --- 8.2 Generate CollateralSurrogateKey ---
+df_collateral_deduped = df_collateral_deduped.withColumn(
+    "CollateralSurrogateKey",
+    F.sha2(
+        F.concat_ws("|", F.col("CollateralID"), F.col("EffectiveStartDate")),
+        256
+    )
+)
+
+# --- 8.3 Select and order final columns ---
+df_dim_collateral_asset = df_collateral_deduped.select(
+    F.col("CollateralSurrogateKey"),
+    F.col("CollateralID"),
+    F.col("LoanID"),
+    F.col("DebtorID"),
+    F.col("TickerSymbol"),
+    F.col("AssetType"),
+    F.col("QuantityHeld"),
+    F.col("CollateralValueAtPledge"),
+    F.col("CollateralPledgeDate"),
+    F.col("Exchange"),
+    F.col("EffectiveStartDate"),
+    F.col("EffectiveEndDate"),
+    F.col("IsCurrent"),
+    # Audit columns
+    F.lit(PIPELINE_RUN_DATE).cast(DateType()).alias("gold_load_date"),
+    F.lit(RUN_ID).alias("gold_run_id")
+)
+
+# --- 8.4 Apply SCD Type 2 merge into dim_collateral_asset ---
+if not spark.catalog.tableExists(GOLD_DIM_COLLATERAL_ASSET):
+    df_dim_collateral_asset.write \
+        .format("delta") \
+        .mode("overwrite") \
+        .saveAsTable(GOLD_DIM_COLLATERAL_ASSET)
+    print("dim_collateral_asset created on first run.")
+else:
+    delta_table = DeltaTable.forName(spark, GOLD_DIM_COLLATERAL_ASSET)
+    delta_table.alias("target").merge(
+        df_dim_collateral_asset.alias("source"),
+        "target.CollateralSurrogateKey = source.CollateralSurrogateKey"
+    ).whenMatchedUpdateAll() \
+     .whenNotMatchedInsertAll() \
+     .execute()
+    print("dim_collateral_asset updated via SCD Type 2 merge.")
+
+# --- 8.5 Print confirmation ---
+row_count = spark.table(GOLD_DIM_COLLATERAL_ASSET).count()
+print(f"dim_collateral_asset row count: {row_count}")
+print("Ready to proceed to Section 9: Balance resolution and market price join.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
 
 # CELL ********************
 
 # MAGIC %%sql
 # MAGIC 
 # MAGIC 
-# MAGIC SELECT Count(distinct LoanID)
+# MAGIC SELECT Count(distinct CollateralID)
 # MAGIC FROM silver_debtor_loan_collateral
 
 
