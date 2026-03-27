@@ -209,13 +209,7 @@ tables and:
 
 ---
 
-*CSL-DE-001 | Confidential | Data Engineering Division | March 2026*
+*CSL-DE-001 | ********* | Data Engineering Division | March 2026*
 *Generated from notebook: nb_silver_transformation*
 *Repository: csl-de-001-collateral-risk-pipeline*
 ```
-
----
-
-Create the file at `docs/silver/Silver_Layer_Transformation_Summary.md` and commit with:
-```
-docs: add Silver layer transformation summary document
