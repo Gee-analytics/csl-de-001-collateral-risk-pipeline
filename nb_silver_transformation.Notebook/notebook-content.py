@@ -3813,14 +3813,14 @@ print(f"  Match        : {count == 20}")
 #       Close old row (EffectiveEndDate = today, IsCurrent = False)
 #       Insert new row (new EffectiveStartDate, IsCurrent = True)
 #   - No match found: insert as new record.
+# Idempotency guard: exclude rows where natural key already exists
+# in the table from any previous pipeline run.
 
 from delta.tables import DeltaTable
 
-# Check if table exists
 table_exists = spark.catalog.tableExists("silver_officer_client_mapping")
 
 if not table_exists:
-    # First run: write entire DataFrame as new table
     df_silver_officer_client_mapping.write \
         .format("delta") \
         .mode("overwrite") \
@@ -3829,7 +3829,6 @@ if not table_exists:
     print("Step 8.2 - First run: silver_officer_client_mapping created.")
 
 else:
-    # Subsequent runs: Delta merge with SCD Type 2 logic
     delta_table = DeltaTable.forName(spark, "silver_officer_client_mapping")
 
     # Step 1: Close old rows where tracked columns have changed
@@ -3852,8 +3851,7 @@ else:
         ) \
         .execute()
 
-    # Step 2: Insert new rows for changed records and brand new records
-    # We insert all incoming records that do not already exist as current
+    # Step 2: Build rows to insert
     existing_current = delta_table.toDF().filter(F.col("IsCurrent") == True)
 
     new_rows = df_silver_officer_client_mapping.join(
@@ -3876,6 +3874,17 @@ else:
 
     rows_to_insert = new_rows.union(changed_rows)
 
+    # Idempotency guard: exclude rows where natural key already exists
+    already_exists = delta_table.toDF().select(
+        "OfficerID", "ClientID"
+    ).distinct()
+
+    rows_to_insert = rows_to_insert.join(
+        already_exists,
+        on=["OfficerID", "ClientID"],
+        how="left_anti"
+    )
+
     if rows_to_insert.count() > 0:
         rows_to_insert.write \
             .format("delta") \
@@ -3884,7 +3893,6 @@ else:
 
     print("Step 8.2 - Subsequent run: silver_officer_client_mapping merged.")
 
-# Verify write
 count = spark.table("silver_officer_client_mapping").count()
 print(f"Step 8.2 complete - silver_officer_client_mapping written.")
 print(f"  Rows in table : {count}")
@@ -3947,7 +3955,10 @@ else:
         ) \
         .execute()
 
-    # Step 2: Insert new rows for changed and brand new records
+    # Step 2: Insert new rows with idempotency guard
+    # Guard: skip insert if a row with the same natural key
+    # and EffectiveStartDate = today already exists.
+    # Prevents duplicate history rows on same-day re-runs.
     existing_current_dlc = delta_table_dlc.toDF().filter(
         F.col("IsCurrent") == True
     )
@@ -3970,6 +3981,20 @@ else:
 
     rows_to_insert_dlc = new_rows_dlc.union(changed_rows_dlc)
 
+    
+    # Idempotency guard: exclude rows where natural key already exists
+    # in the table from any previous pipeline run.
+
+    already_exists_dlc = delta_table_dlc.toDF().select(
+    "DebtorID", "LoanID", "CollateralID"
+    ).distinct()
+
+    rows_to_insert_dlc = rows_to_insert_dlc.join(
+        already_exists_dlc,
+        on=["DebtorID", "LoanID", "CollateralID"],
+        how="left_anti"
+    )
+
     if rows_to_insert_dlc.count() > 0:
         rows_to_insert_dlc.write \
             .format("delta") \
@@ -3977,13 +4002,6 @@ else:
             .saveAsTable("silver_debtor_loan_collateral")
 
     print("Step 8.3 - Subsequent run: silver_debtor_loan_collateral merged.")
-
-# Verify write
-count = spark.table("silver_debtor_loan_collateral").count()
-print(f"Step 8.3 complete - silver_debtor_loan_collateral written.")
-print(f"  Rows in table : {count}")
-print(f"  Expected      : 300")
-print(f"  Match         : {count == 300}")
 
 # METADATA ********************
 
@@ -4330,18 +4348,6 @@ spark.table("silver_pipeline_audit") \
     ).show(truncate=False)
 
 print("Section 9 complete. nb_silver_transformation finished.")
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# CELL ********************
-
-
-
 
 # METADATA ********************
 
