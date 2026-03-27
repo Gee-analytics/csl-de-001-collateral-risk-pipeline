@@ -1307,10 +1307,176 @@ df_fact_prep.groupBy("LTV_Calculation_Status").count().show()
 
 # MARKDOWN ********************
 
-# ### **Step 1.11** - Audit log accumulator
+# ## Section 11: Referential Integrity Validation
+# Validates that every foreign key value in the prepared fact records
+# has a corresponding record in its dimension table before writing to
+# fact_ltv_daily_snapshot.
+# 
+# This validation is the substitute for database-level foreign key
+# enforcement which is not available in a Lakehouse architecture.
+# Records that fail validation are written to fact_ltv_quarantine_log
+# rather than the fact table. The count of quarantined records is
+# printed for investigation.
+# 
+# Without this check, orphaned fact records with no matching dimension
+# record would silently break Power BI relationships and produce
+# incorrect aggregations in the Risk Command Centre dashboard.
+# 
+# ### Steps
+# - **Step 11.1** - Load current dimension keys for validation
+# - **Step 11.2** - Validate DebtorID exists in dim_debtor
+# - **Step 11.3** - Validate LoanID exists in dim_loan
+# - **Step 11.4** - Validate CollateralID exists in dim_collateral_asset
+# - **Step 11.5** - Validate AssignedOfficerID exists in dim_collections_officer
+# - **Step 11.6** - Validate ClientID exists in dim_client_bank
+# - **Step 11.7** - Validate DateKey exists in dim_date
+# - **Step 11.8** - Split into clean and quarantine sets
+# - **Step 11.9** - Print validation summary
+
 
 # CELL ********************
 
+# =============================================================================
+# SECTION 11: REFERENTIAL INTEGRITY VALIDATION
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 11.1 Load current dimension keys for validation ---
+# We extract only the key columns from each dimension table.
+# These are used as lookup sets to validate foreign keys in the fact records.
+# Using distinct() ensures duplicate keys do not cause false join inflation.
+
+debtor_keys = spark.table(GOLD_DIM_DEBTOR) \
+    .select("DebtorID").distinct()
+
+loan_keys = spark.table(GOLD_DIM_LOAN) \
+    .select("LoanID").distinct()
+
+collateral_keys = spark.table(GOLD_DIM_COLLATERAL_ASSET) \
+    .select("CollateralID").distinct()
+
+officer_keys = spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
+    .select(F.col("OfficerID").alias("AssignedOfficerID")).distinct()
+
+client_keys = spark.table(GOLD_DIM_CLIENT_BANK) \
+    .select("ClientID").distinct()
+
+date_keys = spark.table(GOLD_DIM_DATE) \
+    .select("DateKey").distinct()
+
+# --- 11.2 Validate DebtorID exists in dim_debtor ---
+df_fact_prep = df_fact_prep.withColumn(
+    "debtor_fk_valid",
+    F.col("DebtorID").isNotNull()
+)
+
+df_debtor_valid = df_fact_prep.join(
+    debtor_keys,
+    on="DebtorID",
+    how="left_anti"
+).select("DebtorID").distinct()
+
+debtor_orphans = df_debtor_valid.count()
+print(f"DebtorID orphans (not in dim_debtor)     : {debtor_orphans}")
+
+# --- 11.3 Validate LoanID exists in dim_loan ---
+df_loan_valid = df_fact_prep.join(
+    loan_keys,
+    on="LoanID",
+    how="left_anti"
+).select("LoanID").distinct()
+
+loan_orphans = df_loan_valid.count()
+print(f"LoanID orphans (not in dim_loan)         : {loan_orphans}")
+
+# --- 11.4 Validate CollateralID exists in dim_collateral_asset ---
+df_collateral_valid = df_fact_prep.join(
+    collateral_keys,
+    on="CollateralID",
+    how="left_anti"
+).select("CollateralID").distinct()
+
+collateral_orphans = df_collateral_valid.count()
+print(f"CollateralID orphans (not in dim_collateral_asset): {collateral_orphans}")
+
+# --- 11.5 Validate AssignedOfficerID exists in dim_collections_officer ---
+df_officer_valid = df_fact_prep.join(
+    officer_keys,
+    on="AssignedOfficerID",
+    how="left_anti"
+).select("AssignedOfficerID").distinct()
+
+officer_orphans = df_officer_valid.count()
+print(f"OfficerID orphans (not in dim_collections_officer): {officer_orphans}")
+
+# --- 11.6 Validate ClientID exists in dim_client_bank ---
+df_client_valid = df_fact_prep.join(
+    client_keys,
+    on="ClientID",
+    how="left_anti"
+).select("ClientID").distinct()
+
+client_orphans = df_client_valid.count()
+print(f"ClientID orphans (not in dim_client_bank): {client_orphans}")
+
+# --- 11.7 Validate DateKey exists in dim_date ---
+df_date_valid = df_fact_prep.join(
+    date_keys,
+    on="DateKey",
+    how="left_anti"
+).select("DateKey").distinct()
+
+date_orphans = df_date_valid.count()
+print(f"DateKey orphans (not in dim_date)        : {date_orphans}")
+
+# --- 11.8 Split into clean and quarantine sets ---
+# A record is quarantined if ANY of its foreign keys fail validation.
+# left_anti join returns rows in the left DataFrame that have no match
+# in the right DataFrame. We use this to identify orphaned records.
+# Clean records pass all 6 foreign key checks.
+
+df_fact_clean = df_fact_prep \
+    .join(debtor_keys, on="DebtorID", how="inner") \
+    .join(loan_keys, on="LoanID", how="inner") \
+    .join(collateral_keys, on="CollateralID", how="inner") \
+    .join(officer_keys, on="AssignedOfficerID", how="inner") \
+    .join(client_keys, on="ClientID", how="inner") \
+    .join(date_keys, on="DateKey", how="inner")
+
+df_fact_quarantine = df_fact_prep \
+    .join(debtor_keys, on="DebtorID", how="left_anti") \
+    .unionByName(
+        df_fact_prep.join(loan_keys, on="LoanID", how="left_anti"),
+        allowMissingColumns=True
+    ).unionByName(
+        df_fact_prep.join(collateral_keys, on="CollateralID", how="left_anti"),
+        allowMissingColumns=True
+    ).unionByName(
+        df_fact_prep.join(officer_keys, on="AssignedOfficerID", how="left_anti"),
+        allowMissingColumns=True
+    ).unionByName(
+        df_fact_prep.join(client_keys, on="ClientID", how="left_anti"),
+        allowMissingColumns=True
+    ).unionByName(
+        df_fact_prep.join(date_keys, on="DateKey", how="left_anti"),
+        allowMissingColumns=True
+    ).distinct()
+
+clean_count = df_fact_clean.count()
+quarantine_count = df_fact_quarantine.count()
+
+# --- 11.9 Print validation summary ---
+print(f"\n=== Referential Integrity Validation Summary ===")
+print(f"Total records entering validation : {df_fact_prep.count()}")
+print(f"Clean records passed validation   : {clean_count}")
+print(f"Quarantined records               : {quarantine_count}")
+
+if quarantine_count > 0:
+    print("\nWARNING: Quarantined records detected. Investigate before next run.")
+    print("Quarantined records will be written to fact_ltv_quarantine_log.")
+else:
+    print("\nAll records passed referential integrity validation.")
+    print("Ready to proceed to Section 12: Write to fact_ltv_daily_snapshot.")
 
 # METADATA ********************
 
