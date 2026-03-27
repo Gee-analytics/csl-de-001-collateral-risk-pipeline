@@ -171,6 +171,138 @@
             ]
           }
         ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "9706406d-c8ab-b49f-4d4b-b7fd70fb5c16",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "run_silver_transformation",
+        "description": "Runs the Silver transformation notebook after all three Bronze streams complete successfully. Cleanses, types, deduplicates, and joins Bronze data into Silver Delta tables.",
+        "dependsOn": [
+          {
+            "activity": "run_stream_c_market_prices_ingest",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Office365Email",
+        "typeProperties": {
+          "body": "Silver transformation has failed in the CSL-DE-001 pipeline.\n\nPipeline Run ID: @{pipeline().RunId}\nTime: @{utcnow()}\n\nError Details:\n@{activity('run_silver_transformation').error.message}\n\nGold aggregation has not run. Please investigate immediately.",
+          "to": "gab-obot@outlook.com",
+          "subject": "[CSL-DE-001] ALERT: Silver Transformation Failed"
+        },
+        "externalReferences": {
+          "connection": "8edf6638-dbd2-46a0-b05c-35d7870797f4"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "email_alert_silver_failure",
+        "description": "Sends an email alert to the Data Engineering team when Silver transformation fails",
+        "dependsOn": [
+          {
+            "activity": "run_silver_transformation",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "f6b3bc89-f142-8288-4649-dfe5df392ca1",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 1,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "run_gold_aggregation",
+        "description": "Runs the Gold aggregation notebook after Silver transformation completes successfully. Computes LTV ratios, applies risk flags, and writes business ready output to Gold Delta tables.",
+        "dependsOn": [
+          {
+            "activity": "run_silver_transformation",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Office365Email",
+        "typeProperties": {
+          "body": "\nGold aggregation has succeeded in the CSL-DE-001 pipeline.\n\n\nPipeline Run ID: @{pipeline().RunId}\n\n\nTime: @{utcnow()}\n\n\nGold aggregation successful",
+          "to": "gab-obot@outlook.com; gabrielobot29@gmail.com",
+          "subject": "Gold Aggregation Successful"
+        },
+        "externalReferences": {
+          "connection": "8edf6638-dbd2-46a0-b05c-35d7870797f4"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "email_alert_gold_success",
+        "description": "Sends an email alert to the Data Engineering team when gold layer aggregation succeeds",
+        "dependsOn": [
+          {
+            "activity": "run_gold_aggregation",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "Office365Email",
+        "typeProperties": {
+          "body": "Gold aggregation has failed in the CSL-DE-001 pipeline.\n\nPipeline Run ID: @{pipeline().RunId}\n\nTime: @{utcnow()}\n\nError Details:\n@{activity('run_gold_aggregation').error.message}\n\nDashboard has not been refreshed. Please investigate and re-run the pipeline once resolved.",
+          "to": "gab-obot@outlook.com; gabrielobot29@gmail.com",
+          "subject": "[CSL-DE-001] ALERT: Gold Aggregation Failed"
+        },
+        "externalReferences": {
+          "connection": "8edf6638-dbd2-46a0-b05c-35d7870797f4"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "email_alert_gold_failure",
+        "description": "Sends an email alert to the Data Engineering team when gold layer aggregation fails",
+        "dependsOn": [
+          {
+            "activity": "run_gold_aggregation",
+            "dependencyConditions": [
+              "Failed"
+            ]
+          }
+        ]
       }
     ]
   }
