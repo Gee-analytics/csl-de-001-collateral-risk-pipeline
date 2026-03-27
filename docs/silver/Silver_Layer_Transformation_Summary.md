@@ -4,7 +4,7 @@
 
 ## Project: CSL-DE-001 | Collateral Risk Monitoring & Margin Call Automation
 ## Notebook: `nb_silver_transformation`
-## Author: Data Engineering Team
+## Author: Gabriel Obot(Data Engineering Team)
 ## Date: March 2026
 ## Status: Complete
 
@@ -117,6 +117,15 @@ pipeline run with dynamic row counts computed at runtime. A deduplication
 guard prevents duplicate audit entries on notebook re-runs during
 development. The audit table is separate from the Bronze watermark
 control table `gold_pipeline_metadata` which serves a different purpose.
+
+### Idempotency
+The Silver layer is fully idempotent. Running the notebook multiple times 
+produces identical results:
+- Full overwrite tables: always produce the same row count
+- Append with watermark tables: watermark prevents duplicate appends
+- SCD Type 2 merge tables: natural key guard prevents duplicate inserts
+  on same-day re-runs. If a row with the same natural key already exists
+  in the table, the insert is skipped entirely.
 
 ---
 
