@@ -1122,45 +1122,181 @@ df_resolved.groupBy("EligibleForLTV").count().show()
 # META   "language_group": "synapse_pyspark"
 # META }
 
-# CELL ********************
-
-df_resolved.filter(
-    F.col("DataFreshnessStatus") == "MISSING"
-).select("TickerSymbol", "CollateralID", "DataFreshnessStatus").distinct().show()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
 # MARKDOWN ********************
 
-# ### **Step 1.9** - Stale price lookback window
+# ## Section 10: LTV Calculation, Risk Flagging, and Shortfall Computation
+# Implements all core business logic from CSL_DE_001_Business_Rules_v1.0.md.
+# Takes the resolved DataFrame from Section 9 and computes debtor-level
+# LTV ratios, assigns risk flags, and calculates collateral coverage shortfall.
+# 
+# Aggregation happens at debtor level per BRD Section 8. All eligible loans
+# and collateral positions for a debtor are summed before LTV is computed.
+# LTV at loan or collateral level in isolation would produce misleading
+# risk signals for debtors with complex multi-position portfolios.
+# 
+# ### Steps
+# - **Step 10.1** - Aggregate to debtor level: TotalOutstandingBalance and TotalCollateralValue
+# - **Step 10.2** - Compute LTV Ratio and LTV Percentage
+# - **Step 10.3** - Handle division by zero
+# - **Step 10.4** - Assign risk flags per BRD Section 4 thresholds
+# - **Step 10.5** - Set ImmediateActionRequired flag
+# - **Step 10.6** - Compute CollateralCoverageShortfall per BRD Section 5
+# - **Step 10.7** - Rejoin collateral asset level detail for fact table grain
+# - **Step 10.8** - Add DateKey for dim_date join
+# - **Step 10.9** - Print summary counts and risk distribution
 
 
 # CELL ********************
 
-df_eligible.printSchema()
-
-# METADATA ********************
-
-# META {
-# META   "language": "python",
-# META   "language_group": "synapse_pyspark"
-# META }
-
-# MARKDOWN ********************
-
-# ### **Step 1.10** - Loan status scope
 
 
-# CELL ********************
+# =============================================================================
+# SECTION 10: LTV CALCULATION, RISK FLAGGING, AND SHORTFALL COMPUTATION
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
 
+# --- 10.1 Aggregate to debtor level ---
+# Per BRD Section 8: LTV is calculated at debtor level not loan or collateral level.
+# TotalOutstandingBalance = SUM of ResolvedOutstandingBalance across all active
+# and defaulted loans for a given DebtorID.
+# TotalCollateralValue = SUM of CurrentCollateralValue across all eligible
+# collateral positions for a given DebtorID.
+# Ineligible collateral positions (EligibleForLTV = FALSE) are excluded from
+# TotalCollateralValue but remain in the dataset for audit purposes.
 
+df_debtor_aggregated = df_resolved.groupBy("DebtorID").agg(
+    F.sum("ResolvedOutstandingBalance").alias("TotalOutstandingBalance"),
+    F.sum(
+        F.when(F.col("EligibleForLTV") == True, F.col("CurrentCollateralValue"))
+         .otherwise(F.lit(0))
+    ).alias("TotalCollateralValue"),
+    F.count("CollateralID").alias("TotalCollateralPositions"),
+    F.sum(
+        F.when(F.col("EligibleForLTV") == False, F.lit(1))
+         .otherwise(F.lit(0))
+    ).alias("IneligiblePositions")
+)
 
-df_market_prices.agg(F.max("PriceDate")).show()
+# --- 10.2 Compute LTV Ratio and LTV Percentage ---
+# Per BRD Section 2.3: LTV Ratio = TotalOutstandingBalance / TotalCollateralValue
+# Per BRD Section 2.4: LTV Percentage = LTV Ratio x 100
+# Division by zero handled explicitly in Step 10.3.
+df_debtor_aggregated = df_debtor_aggregated.withColumn(
+    "LTV_Ratio",
+    F.when(
+        (F.col("TotalCollateralValue").isNull()) |
+        (F.col("TotalCollateralValue") == 0),
+        None
+    ).otherwise(
+        F.col("TotalOutstandingBalance") / F.col("TotalCollateralValue")
+    )
+).withColumn(
+    "LTV_Percentage",
+    F.when(F.col("LTV_Ratio").isNotNull(), F.col("LTV_Ratio") * 100)
+     .otherwise(None)
+)
+
+# --- 10.3 Handle division by zero ---
+# Where TotalCollateralValue is zero or NULL, LTV_Ratio is NULL.
+# These records are flagged separately so they are not confused with
+# legitimate LTV calculations. A zero collateral value means either
+# all positions are ineligible or no collateral was pledged.
+df_debtor_aggregated = df_debtor_aggregated.withColumn(
+    "LTV_Calculation_Status",
+    F.when(
+        (F.col("TotalCollateralValue").isNull()) |
+        (F.col("TotalCollateralValue") == 0),
+        "NO_ELIGIBLE_COLLATERAL"
+    ).otherwise("CALCULATED")
+)
+
+# --- 10.4 Assign risk flags per BRD Section 4 thresholds ---
+# CRITICAL : LTV Ratio >= 1.00
+# HIGH     : LTV Ratio >= 0.80 and < 1.00
+# MEDIUM   : LTV Ratio >= 0.60 and < 0.80
+# LOW      : LTV Ratio < 0.60
+# NULL     : LTV could not be calculated
+df_debtor_aggregated = df_debtor_aggregated.withColumn(
+    "RiskFlag",
+    F.when(F.col("LTV_Ratio").isNull(), "UNDETERMINED")
+     .when(F.col("LTV_Ratio") >= LTV_HIGH_UPPER, "CRITICAL")
+     .when(F.col("LTV_Ratio") >= LTV_MEDIUM_UPPER, "HIGH")
+     .when(F.col("LTV_Ratio") >= LTV_LOW_UPPER, "MEDIUM")
+     .otherwise("LOW")
+)
+
+# --- 10.5 Set ImmediateActionRequired flag ---
+# Per BRD Section 4.1: TRUE where RiskFlag is HIGH or CRITICAL.
+# These accounts appear in the High Risk Accounts view in Power BI.
+df_debtor_aggregated = df_debtor_aggregated.withColumn(
+    "ImmediateActionRequired",
+    F.when(F.col("RiskFlag").isin("HIGH", "CRITICAL"), True)
+     .otherwise(False)
+)
+
+# --- 10.6 Compute CollateralCoverageShortfall ---
+# Per BRD Section 5.1:
+# RequiredCollateralValue = TotalOutstandingBalance / 0.80
+# CollateralCoverageShortfall = RequiredCollateralValue - TotalCollateralValue
+# Set to NULL where result is zero or negative per BRD Section 5.2.
+# A positive result is the NGN amount by which collateral must increase
+# to bring the account out of HIGH risk status.
+df_debtor_aggregated = df_debtor_aggregated.withColumn(
+    "RequiredCollateralValue",
+    F.when(
+        F.col("LTV_Ratio").isNotNull(),
+        F.col("TotalOutstandingBalance") / F.lit(0.80)
+    ).otherwise(None)
+).withColumn(
+    "CollateralCoverageShortfall",
+    F.when(
+        F.col("RequiredCollateralValue").isNotNull() &
+        (F.col("RequiredCollateralValue") > F.col("TotalCollateralValue")),
+        F.col("RequiredCollateralValue") - F.col("TotalCollateralValue")
+    ).otherwise(None)
+)
+
+# --- 10.7 Rejoin collateral asset level detail for fact table grain ---
+# The fact table grain is one row per debtor per collateral asset per date.
+# We aggregated to debtor level for LTV computation then rejoin the
+# collateral asset level detail to restore the required fact table grain.
+# This preserves asset level detail while carrying debtor level LTV metrics.
+df_fact_prep = df_resolved.join(
+    df_debtor_aggregated.select(
+        "DebtorID",
+        "TotalOutstandingBalance",
+        "TotalCollateralValue",
+        "TotalCollateralPositions",
+        "IneligiblePositions",
+        "LTV_Ratio",
+        "LTV_Percentage",
+        "LTV_Calculation_Status",
+        "RiskFlag",
+        "ImmediateActionRequired",
+        "RequiredCollateralValue",
+        "CollateralCoverageShortfall"
+    ),
+    on="DebtorID",
+    how="left"
+)
+
+# --- 10.8 Add DateKey for dim_date join ---
+# DateKey is formatted as integer yyyyMMdd to match dim_date.DateKey.
+# Uses PIPELINE_RUN_DATE as the snapshot date for this daily run.
+df_fact_prep = df_fact_prep.withColumn(
+    "DateKey",
+    F.date_format(F.lit(PIPELINE_RUN_DATE), "yyyyMMdd").cast(IntegerType())
+)
+
+# --- 10.9 Print summary counts and risk distribution ---
+total = df_fact_prep.count()
+print(f"Total fact records prepared: {total}")
+print("\nRisk flag distribution:")
+df_fact_prep.groupBy("RiskFlag").count().orderBy("RiskFlag").show()
+print("\nImmediateActionRequired distribution:")
+df_fact_prep.groupBy("ImmediateActionRequired").count().show()
+print("\nLTV_Calculation_Status distribution:")
+df_fact_prep.groupBy("LTV_Calculation_Status").count().show()
 
 # METADATA ********************
 
