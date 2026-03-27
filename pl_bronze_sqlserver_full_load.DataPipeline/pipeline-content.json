@@ -193,40 +193,6 @@
         "typeProperties": {
           "source": {
             "type": "SqlServerSource",
-            "partitionOption": "None",
-            "queryTimeout": "02:00:00",
-            "datasetSettings": {
-              "type": "SqlServerTable",
-              "typeProperties": {
-                "database": "CSL_DEV"
-              },
-              "schema": [],
-              "externalReferences": {
-                "connection": "9c7d9f49-3fac-4c10-9996-7ab25e0c10a9"
-              },
-              "annotations": []
-            }
-          },
-          "enableStaging": false
-        },
-        "policy": {
-          "timeout": "0.12:00:00",
-          "retry": 2,
-          "retryIntervalInSeconds": 30,
-          "secureInput": false,
-          "secureOutput": false
-        },
-        "name": "copy_client_bank_to_bronze_copy1",
-        "description": "Full load of client_bank reference table from on-premises SQL Server to bronze_client_bank Delta table in Fabric Lakehouse",
-        "state": "Inactive",
-        "onInactiveMarkAs": "Succeeded",
-        "dependsOn": []
-      },
-      {
-        "type": "Copy",
-        "typeProperties": {
-          "source": {
-            "type": "SqlServerSource",
             "sqlReaderQuery": "SELECT\n    OfficerID,\n    FullName,\n    Email,\n    PhoneNumber,\n    Status,\n    TeamLeadOfficerID,\n    DateJoined,\n    GETDATE() AS ingestion_timestamp,\n    'onprem_sqlserver' AS source_system,\n    'manual_run_001' AS pipeline_run_id\nFROM dbo.collections_officer",
             "partitionOption": "None",
             "queryTimeout": "02:00:00",
