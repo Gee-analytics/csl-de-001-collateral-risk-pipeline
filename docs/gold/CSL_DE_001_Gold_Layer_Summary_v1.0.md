@@ -375,8 +375,8 @@ using shared dimension context.
 
 | Version | Date | Author | Change Summary |
 |---|---|---|---|
-| v1.0 | March 2026 | Data Engineering Team | Initial version. Gold layer complete and validated. |
+| v1.0 | March 2026 | (Gabriel Obot) Data Engineering Team | Initial version. Gold layer complete and validated. |
 
 ---
 
-*CSL-DE-001 | Confidential | Data Engineering Division | March 2026*
+*CSL-DE-001 | ******** | Data Engineering Division | March 2026*
