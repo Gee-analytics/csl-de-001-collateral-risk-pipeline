@@ -1574,6 +1574,19 @@ if quarantine_count > 0:
 else:
     print("No quarantined records. fact_ltv_quarantine_log not written to.")
 
+# --- 12.3 Idempotency guard ---
+# Delete any existing rows for today's PipelineRunDate before appending.
+# Ensures the notebook can be safely rerun on the same day without
+# producing duplicate snapshot records in the fact table.
+# This implements the delete-then-insert pattern for idempotent appends.
+
+if spark.catalog.tableExists(GOLD_FACT_LTV_SNAPSHOT):
+    spark.sql(f"""
+        DELETE FROM {GOLD_FACT_LTV_SNAPSHOT}
+        WHERE PipelineRunDate = '{PIPELINE_RUN_DATE}'
+    """)
+    print(f"Idempotency guard: deleted existing rows for {PIPELINE_RUN_DATE}")
+
 # --- 12.3 Append clean records to fact_ltv_daily_snapshot ---
 # Append only. Never overwrite. Each daily run adds a new snapshot.
 # Full LTV history is preserved for trend analysis in Power BI.
