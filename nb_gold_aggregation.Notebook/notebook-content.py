@@ -924,29 +924,196 @@ print("Ready to proceed to Section 9: Balance resolution and market price join."
 # META   "language_group": "synapse_pyspark"
 # META }
 
-# CELL ********************
-
-# MAGIC %%sql
-# MAGIC 
-# MAGIC 
-# MAGIC SELECT Count(distinct CollateralID)
-# MAGIC FROM silver_debtor_loan_collateral
-
-
-# METADATA ********************
-
-# META {
-# META   "language": "sparksql",
-# META   "language_group": "synapse_pyspark"
-# META }
-
 # MARKDOWN ********************
 
-# ### **Step 1.7** - Gold output table paths
+# ## Section 9: Balance Resolution and Market Price Join
+# Implements the two core data resolution rules from the Business Rules Document
+# before LTV can be computed.
+# 
+# Step 1 resolves the authoritative outstanding balance per loan using the
+# Balance Authority Rule. S3 bank balance update is the primary source.
+# On-premises SQL Server balance is the fallback.
+# Source: CSL_DE_001_Business_Rules_v1.0.md, Section 3.
+# 
+# Step 2 resolves the current market price per ticker using the Stale Price
+# Logic. Today's closing price is primary. Lookback up to 5 business days
+# where today's price is missing. MISSING flag where no price found within
+# 5 business days.
+# Source: CSL_DE_001_Business_Rules_v1.0.md, Section 6.
+# 
+# ### Steps
+# - **Step 9.1** - Filter silver_debtor_loan_collateral to eligible loans
+# - **Step 9.2** - Join to silver_bank_balance_update on LoanID
+# - **Step 9.3** - Resolve authoritative balance using COALESCE, add BalanceSource
+# - **Step 9.4** - Join to silver_market_prices for today's closing price
+# - **Step 9.5** - Apply stale price lookback for missing today prices
+# - **Step 9.6** - Set DataFreshnessStatus and EligibleForLTV
+# - **Step 9.7** - Compute CurrentCollateralValue
+# - **Step 9.8** - Print summary counts
 
 
 # CELL ********************
 
+# =============================================================================
+# SECTION 9: BALANCE RESOLUTION AND MARKET PRICE JOIN
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 9.1 Filter silver_debtor_loan_collateral to eligible loans ---
+# Per BRD Section 10: only Active and Defaulted loans are included in LTV.
+# Settled loans are excluded as the debt obligation has been fulfilled.
+# Also filter to IsCurrent = True to exclude expired SCD Type 2 versions.
+df_eligible = df_debtor_loan_collateral.filter(
+    (F.col("IsCurrent") == True) &
+    (F.col("LoanStatus").isin(LTV_ELIGIBLE_LOAN_STATUSES))
+)
+
+eligible_count = df_eligible.count()
+print(f"Eligible records after loan status filter: {eligible_count}")
+
+# --- 9.2 Join to silver_bank_balance_update on LoanID ---
+# LEFT JOIN preserves all eligible collateral records even where no S3
+# bank balance update exists for that LoanID. The fallback to on-premises
+# balance is handled in Step 9.3 via COALESCE.
+# Only the most recent S3 balance per LoanID is used, identified by
+# taking the maximum ReportingDate per LoanID before joining.
+df_latest_balance = df_bank_balance_update.groupBy("LoanID").agg(
+    F.max("ReportingDate").alias("LatestReportingDate")
+).join(
+    df_bank_balance_update,
+    on=["LoanID"],
+    how="inner"
+).filter(
+    F.col("ReportingDate") == F.col("LatestReportingDate")
+).select(
+    F.col("LoanID"),
+    F.col("CurrentOutstandingBalance").alias("S3_OutstandingBalance"),
+    F.col("ReportingDate").alias("S3_ReportingDate")
+)
+
+df_with_balance = df_eligible.join(
+    df_latest_balance,
+    on="LoanID",
+    how="left"
+)
+
+# --- 9.3 Resolve authoritative balance using COALESCE ---
+# Per BRD Section 3: S3 bank balance is the primary source.
+# On-premises SQL Server balance is the fallback where S3 has no record.
+# BalanceSource column records which source was used for audit purposes.
+df_with_balance = df_with_balance.withColumn(
+    "ResolvedOutstandingBalance",
+    F.coalesce(
+        F.col("S3_OutstandingBalance"),
+        F.col("OutstandingBalance")
+    )
+).withColumn(
+    "BalanceSource",
+    F.when(F.col("S3_OutstandingBalance").isNotNull(), "S3_UPDATE")
+     .otherwise("ONPREM_ORIGINAL")
+)
+
+balance_source_counts = df_with_balance.groupBy("BalanceSource").count()
+print("\nBalance source distribution:")
+balance_source_counts.show()
+
+# --- 9.4 Join to silver_market_prices for today's closing price ---
+# Join on TickerSymbol where PriceDate equals today's pipeline run date.
+# LEFT JOIN preserves all collateral records even where no price exists
+# for today. Missing prices are handled in Step 9.5.
+df_today_prices = df_market_prices.filter(
+    F.col("PriceDate") == F.lit(PIPELINE_RUN_DATE)
+).select(
+    F.col("TickerSymbol"),
+    F.col("Close").alias("TodayClosePrice"),
+    F.col("PriceDate").alias("TodayPriceDate")
+)
+
+df_with_prices = df_with_balance.join(
+    df_today_prices,
+    on="TickerSymbol",
+    how="left"
+)
+
+# --- 9.5 Apply stale price lookback for missing today prices ---
+# Per BRD Section 6.2: where no price exists for today, look back up to
+# 5 business days for the most recent available ClosePrice.
+# Records using a fallback price are flagged as STALE.
+# This is implemented by finding the most recent price within the lookback
+# window for tickers where today's price is missing.
+
+# Identify tickers with no price today
+tickers_missing_today = df_with_prices.filter(
+    F.col("TodayClosePrice").isNull()
+).select("TickerSymbol").distinct()
+
+# Find most recent available price within lookback window for those tickers
+lookback_start = F.date_sub(F.lit(PIPELINE_RUN_DATE), STALE_PRICE_LOOKBACK_DAYS * 2)
+
+df_stale_prices = df_market_prices.join(
+    tickers_missing_today,
+    on="TickerSymbol",
+    how="inner"
+).filter(
+    (F.col("PriceDate") >= lookback_start) &
+    (F.col("PriceDate") < F.lit(PIPELINE_RUN_DATE))
+).groupBy("TickerSymbol").agg(
+    F.max("PriceDate").alias("StalePriceDate")
+).join(
+    df_market_prices.select(
+        "TickerSymbol",
+        F.col("PriceDate").alias("StalePriceDate"),
+        F.col("Close").alias("StaleClosePrice")
+    ),
+    on=["TickerSymbol", "StalePriceDate"],
+    how="inner"
+)
+
+# Bring stale prices back into the main DataFrame
+df_with_prices = df_with_prices.join(
+    df_stale_prices,
+    on="TickerSymbol",
+    how="left"
+)
+
+# --- 9.6 Set DataFreshnessStatus and EligibleForLTV ---
+# CURRENT: today's price was available
+# STALE: fallback price used from within 5 business day lookback window
+# MISSING: no price found within lookback window, excluded from LTV
+# Per BRD Section 6.3: MISSING records remain in fact table for audit
+# but EligibleForLTV is set to FALSE.
+df_with_prices = df_with_prices.withColumn(
+    "CurrentMarketPrice",
+    F.coalesce(F.col("TodayClosePrice"), F.col("StaleClosePrice"))
+).withColumn(
+    "DataFreshnessStatus",
+    F.when(F.col("TodayClosePrice").isNotNull(), "CURRENT")
+     .when(F.col("StaleClosePrice").isNotNull(), "STALE")
+     .otherwise("MISSING")
+).withColumn(
+    "EligibleForLTV",
+    F.when(F.col("DataFreshnessStatus") == "MISSING", False)
+     .otherwise(True)
+)
+
+# --- 9.7 Compute CurrentCollateralValue ---
+# Per BRD Section 2.1: CurrentCollateralValue = QuantityHeld x CurrentMarketPrice
+# Only computed where EligibleForLTV is TRUE.
+# NULL where price is missing to prevent misleading zero values.
+df_resolved = df_with_prices.withColumn(
+    "CurrentCollateralValue",
+    F.when(
+        F.col("EligibleForLTV") == True,
+        F.col("QuantityHeld") * F.col("CurrentMarketPrice")
+    ).otherwise(None)
+)
+
+# --- 9.8 Print summary counts ---
+print(f"\nTotal records after resolution: {df_resolved.count()}")
+print("\nDataFreshnessStatus distribution:")
+df_resolved.groupBy("DataFreshnessStatus").count().show()
+print("\nEligibleForLTV distribution:")
+df_resolved.groupBy("EligibleForLTV").count().show()
 
 # METADATA ********************
 
@@ -955,13 +1122,11 @@ print("Ready to proceed to Section 9: Balance resolution and market price join."
 # META   "language_group": "synapse_pyspark"
 # META }
 
-# MARKDOWN ********************
-
-# ### **Step 1.8** - LTV threshold constants
-
-
 # CELL ********************
 
+df_resolved.filter(
+    F.col("DataFreshnessStatus") == "MISSING"
+).select("TickerSymbol", "CollateralID", "DataFreshnessStatus").distinct().show()
 
 # METADATA ********************
 
@@ -977,6 +1142,7 @@ print("Ready to proceed to Section 9: Balance resolution and market price join."
 
 # CELL ********************
 
+df_eligible.printSchema()
 
 # METADATA ********************
 
@@ -992,6 +1158,9 @@ print("Ready to proceed to Section 9: Balance resolution and market price join."
 
 # CELL ********************
 
+
+
+df_market_prices.agg(F.max("PriceDate")).show()
 
 # METADATA ********************
 
