@@ -23,10 +23,15 @@
 # MARKDOWN ********************
 
 # # Stream B: Bronze S3 Bank Balance Ingestion
+# 
+# **Project:** Collateral Risk Monitoring & Margin Call Automation System <br>
+# **Organisation:** Collection Solutions Limited (CSL) <br>
 # **Notebook:** nb_bronze_s3_bank_balance_ingest  
 # **Layer:** Bronze  
 # **Source:** Amazon S3 via Fabric Shortcut  
 # **Target Table:** bronze_bank_balance_update  
+# **Version:** 1.0  
+# **Last Updated:** March 2026  
 # 
 # ## Purpose
 # This notebook ingests daily balance update files dropped by client banks 
