@@ -159,6 +159,7 @@ SILVER_CLIENT_BANK = "Tables/dbo/silver_client_bank"
 # --- 1.7 Gold output table names ---
 # Written using saveAsTable. Fabric assigns dbo schema automatically.
 # Do NOT use file paths here.
+# --- 1.7 Gold output table names ---
 GOLD_FACT_LTV_SNAPSHOT        = "fact_ltv_daily_snapshot"
 GOLD_DIM_DEBTOR               = "dim_debtor"
 GOLD_DIM_LOAN                 = "dim_loan"
@@ -168,6 +169,8 @@ GOLD_DIM_CLIENT_BANK          = "dim_client_bank"
 GOLD_DIM_DATE                 = "dim_date"
 GOLD_FACT_QUARANTINE_LOG      = "fact_ltv_quarantine_log"
 GOLD_AUDIT_LOG                = "gold_audit_log"
+GOLD_FACT_MARKET_PRICES       = "fact_market_prices_daily"
+GOLD_FACT_MARKET_PRICES_READ  = "Tables/dbo/fact_market_prices_daily"
 
 # Gold audit table - all execution audit rows from this notebook write here
 GOLD_AUDIT_LOG                = "gold_audit_log"
@@ -1835,8 +1838,6 @@ print(f"\nnb_gold_aggregation completed successfully.")
 # Subsequent runs: watermark-based append of new PriceDates only.
 # This pattern is consistent with the Bronze incremental load strategy.
 
-GOLD_FACT_MARKET_PRICES = "fact_market_prices_daily"
-GOLD_FACT_MARKET_PRICES_READ = "Tables/dbo/fact_market_prices_daily"
 
 fact_prices_exists = spark.catalog.tableExists(GOLD_FACT_MARKET_PRICES)
 print(f"fact_market_prices_daily exists: {fact_prices_exists}")
