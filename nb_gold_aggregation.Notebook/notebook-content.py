@@ -1490,6 +1490,123 @@ else:
 # META   "language_group": "synapse_pyspark"
 # META }
 
+# CELL ********************
+
+# =============================================================================
+# SECTION 11a: RESOLVE SURROGATE KEYS FOR FACT TABLE
+# nb_gold_aggregation | CSL-DE-001 | Gold Layer Aggregation Notebook
+# =============================================================================
+
+# --- 11a.1 Resolve DebtorSurrogateKey from dim_debtor ---
+# Join on DebtorID where IsCurrent = True to get the active surrogate key.
+# IsCurrent filter ensures we pick the current version of the debtor record
+# and not an expired SCD Type 2 version which would produce a null or wrong key.
+df_debtor_keys = spark.table(GOLD_DIM_DEBTOR) \
+    .filter(F.col("IsCurrent") == True) \
+    .select(
+        F.col("DebtorID"),
+        F.col("DebtorSurrogateKey")
+    ).distinct()
+
+df_fact_clean = df_fact_clean.join(
+    df_debtor_keys,
+    on="DebtorID",
+    how="left"
+)
+
+# --- 11a.2 Resolve LoanSurrogateKey from dim_loan ---
+df_loan_keys = spark.table(GOLD_DIM_LOAN) \
+    .filter(F.col("IsCurrent") == True) \
+    .select(
+        F.col("LoanID"),
+        F.col("LoanSurrogateKey")
+    ).distinct()
+
+df_fact_clean = df_fact_clean.join(
+    df_loan_keys,
+    on="LoanID",
+    how="left"
+)
+
+# --- 11a.3 Resolve CollateralSurrogateKey from dim_collateral_asset ---
+df_collateral_keys = spark.table(GOLD_DIM_COLLATERAL_ASSET) \
+    .filter(F.col("IsCurrent") == True) \
+    .select(
+        F.col("CollateralID"),
+        F.col("CollateralSurrogateKey")
+    ).distinct()
+
+df_fact_clean = df_fact_clean.join(
+    df_collateral_keys,
+    on="CollateralID",
+    how="left"
+)
+
+# --- 11a.4 Resolve OfficerSurrogateKey from dim_collections_officer ---
+df_officer_keys = spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
+    .filter(F.col("IsCurrent") == True) \
+    .select(
+        F.col("OfficerID").alias("AssignedOfficerID"),
+        F.col("OfficerSurrogateKey")
+    ).distinct()
+
+df_fact_clean = df_fact_clean.join(
+    df_officer_keys,
+    on="AssignedOfficerID",
+    how="left"
+)
+
+# --- 11a.5 Resolve ClientSurrogateKey from dim_client_bank ---
+# dim_client_bank is a full overwrite table with no SCD Type 2.
+# No IsCurrent filter needed. One row per ClientID.
+df_client_keys = spark.table(GOLD_DIM_CLIENT_BANK) \
+    .select(
+        F.col("ClientID"),
+        F.col("ClientSurrogateKey")
+    ).distinct()
+
+df_fact_clean = df_fact_clean.join(
+    df_client_keys,
+    on="ClientID",
+    how="left"
+)
+
+# --- 11a.6 Confirm all surrogate keys resolved with no NULLs ---
+print("=== Section 11a: Surrogate Key Resolution Validation ===\n")
+
+sk_validation = {
+    "DebtorSurrogateKey"     : df_fact_clean.filter(F.col("DebtorSurrogateKey").isNull()).count(),
+    "LoanSurrogateKey"       : df_fact_clean.filter(F.col("LoanSurrogateKey").isNull()).count(),
+    "CollateralSurrogateKey" : df_fact_clean.filter(F.col("CollateralSurrogateKey").isNull()).count(),
+    "OfficerSurrogateKey"    : df_fact_clean.filter(F.col("OfficerSurrogateKey").isNull()).count(),
+    "ClientSurrogateKey"     : df_fact_clean.filter(F.col("ClientSurrogateKey").isNull()).count(),
+}
+
+all_resolved = True
+for sk_name, null_count in sk_validation.items():
+    status = "OK" if null_count == 0 else "FAILED"
+    if null_count > 0:
+        all_resolved = False
+    print(f"  {status:<8} | {sk_name:<30} | NULL count: {null_count}")
+
+print()
+
+if not all_resolved:
+    raise ValueError(
+        "Section 11a validation failed. One or more surrogate keys could not "
+        "be resolved. Investigate dimension tables before writing to fact table."
+    )
+
+print("All surrogate keys resolved successfully.")
+print("Ready to proceed to Section 12: Write to fact_ltv_daily_snapshot.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
 # MARKDOWN ********************
 
 # ## Section 12: Write to `fact_ltv_daily_snapshot`
@@ -1515,8 +1632,15 @@ else:
 # --- 12.1 Select and order final fact columns ---
 df_fact_final = df_fact_clean.select(
 
-    # Keys
+    # Surrogate keys for Power BI semantic model relationships
+    F.col("DebtorSurrogateKey"),
+    F.col("LoanSurrogateKey"),
+    F.col("CollateralSurrogateKey"),
+    F.col("OfficerSurrogateKey"),
+    F.col("ClientSurrogateKey"),
     F.col("DateKey"),
+
+    # Natural keys retained for traceability and audit
     F.col("DebtorID"),
     F.col("LoanID"),
     F.col("CollateralID"),
@@ -1901,7 +2025,7 @@ else:
         # Delete any existing rows for the new PriceDates before appending.
         # Prevents duplicates if the notebook is rerun on the same day
         # after new Silver prices have landed.
-        spark.sql(f"""
+        spark.sql(f""" 
             DELETE FROM fact_market_prices_daily
             WHERE PriceDate > '{watermark_value}'
         """)
@@ -1923,7 +2047,6 @@ else:
 # --- 14.6 Print confirmation ---
 total = spark.table(GOLD_FACT_MARKET_PRICES).count()
 print(f"\nfact_market_prices_daily total rows: {total}")
-print("Ready to proceed to Section 13: Write to gold_audit_log.")
 
 # METADATA ********************
 
