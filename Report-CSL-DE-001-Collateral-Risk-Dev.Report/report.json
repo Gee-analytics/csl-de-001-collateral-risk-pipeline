@@ -1,5 +1,5 @@
 {
-  "config": "{\"version\":\"5.72\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY26SU04\",\"type\":2,\"version\":{\"visual\":\"2.8.0\",\"report\":\"3.2.0\",\"page\":\"2.3.1\"}}},\"activeSectionIndex\":0,\"defaultDrillFilterOtherVisuals\":true,\"linguisticSchemaSyncVersion\":0,\"settings\":{\"useNewFilterPaneExperience\":true,\"allowChangeFilterTypes\":true,\"useStylableVisualContainerHeader\":true,\"queryLimitOption\":6,\"useEnhancedTooltips\":true,\"exportDataMode\":1,\"useDefaultAggregateDisplayName\":true},\"objects\":{\"section\":[{\"properties\":{\"verticalAlignment\":{\"expr\":{\"Literal\":{\"Value\":\"'Top'\"}}}}}],\"outspacePane\":[{\"properties\":{\"expanded\":{\"expr\":{\"Literal\":{\"Value\":\"true\"}}}}}]}}",
+  "config": "{\"version\":\"5.72\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY26SU04\",\"type\":2,\"version\":{\"visual\":\"2.8.0\",\"report\":\"3.2.0\",\"page\":\"2.3.1\"}}},\"activeSectionIndex\":1,\"defaultDrillFilterOtherVisuals\":true,\"linguisticSchemaSyncVersion\":0,\"settings\":{\"useNewFilterPaneExperience\":true,\"allowChangeFilterTypes\":true,\"useStylableVisualContainerHeader\":true,\"queryLimitOption\":6,\"useEnhancedTooltips\":true,\"exportDataMode\":1,\"useDefaultAggregateDisplayName\":true},\"objects\":{\"section\":[{\"properties\":{\"verticalAlignment\":{\"expr\":{\"Literal\":{\"Value\":\"'Top'\"}}}}}],\"outspacePane\":[{\"properties\":{\"expanded\":{\"expr\":{\"Literal\":{\"Value\":\"true\"}}}}}]}}",
   "layoutOptimization": 0,
   "resourcePackages": [
     {
@@ -20,7 +20,7 @@
   "sections": [
     {
       "config": "{}",
-      "displayName": "Page 1",
+      "displayName": "Portfolio LTV Summary",
       "displayOption": 1,
       "filters": "[{\"name\":\"c4471dd458d5eea9cef1\",\"expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"DateKey\"}},\"filter\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"fact_ltv_daily_snapshot\",\"Type\":0}],\"Where\":[{\"Condition\":{\"In\":{\"Expressions\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"DateKey\"}}],\"Values\":[[{\"Literal\":{\"Value\":\"20260329L\"}}]]}}}]},\"type\":\"Categorical\",\"howCreated\":1,\"objects\":{}}]",
       "height": 720.00,
@@ -61,6 +61,38 @@
           "x": 22.16,
           "y": 17.90,
           "z": 1000.00
+        }
+      ],
+      "width": 1280.00
+    },
+    {
+      "config": "{}",
+      "displayName": "Page 1",
+      "displayOption": 1,
+      "filters": "[]",
+      "height": 720.00,
+      "name": "784dae8e2a5ad953a9ac",
+      "ordinal": 2,
+      "visualContainers": [],
+      "width": 1280.00
+    },
+    {
+      "config": "{}",
+      "displayName": "Debtor Collateral health Table",
+      "displayOption": 1,
+      "filters": "[{\"name\":\"6c74841be45743bd236a\",\"expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"dim_date\"}},\"Property\":\"DateKey\"}},\"type\":\"Advanced\",\"howCreated\":1}]",
+      "height": 720.00,
+      "name": "cd31490f156c8a7a1f4b",
+      "ordinal": 1,
+      "visualContainers": [
+        {
+          "config": "{\"name\":\"06f2ec0904eba153c81a\",\"layouts\":[{\"id\":0,\"position\":{\"x\":0,\"y\":383.33333333333337,\"z\":0,\"width\":1205.8333333333335,\"height\":319.1666666666667,\"tabOrder\":0}}],\"singleVisual\":{\"visualType\":\"tableEx\",\"projections\":{\"Values\":[{\"queryRef\":\"dim_debtor.FullName\"},{\"queryRef\":\"dim_client_bank.ClientName\"},{\"queryRef\":\"fact_ltv_daily_snapshot.RiskFlag\"},{\"queryRef\":\"Sum(fact_ltv_daily_snapshot.LTV_Percentage)\"},{\"queryRef\":\"Sum(fact_ltv_daily_snapshot.TotalOutstandingBalance)\"},{\"queryRef\":\"Sum(fact_ltv_daily_snapshot.TotalCollateralValue)\"},{\"queryRef\":\"Sum(fact_ltv_daily_snapshot.CollateralCoverageShortfall)\"},{\"queryRef\":\"fact_ltv_daily_snapshot.ImmediateActionRequired\"},{\"queryRef\":\"fact_ltv_daily_snapshot.DataFreshnessStatus\"},{\"queryRef\":\"dim_collections_officer.OfficerFullName\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"d\",\"Entity\":\"dim_debtor\",\"Type\":0},{\"Name\":\"d1\",\"Entity\":\"dim_client_bank\",\"Type\":0},{\"Name\":\"f\",\"Entity\":\"fact_ltv_daily_snapshot\",\"Type\":0},{\"Name\":\"d2\",\"Entity\":\"dim_collections_officer\",\"Type\":0}],\"Select\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"FullName\"},\"Name\":\"dim_debtor.FullName\",\"NativeReferenceName\":\"Debtor\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d1\"}},\"Property\":\"ClientName\"},\"Name\":\"dim_client_bank.ClientName\",\"NativeReferenceName\":\"Client's Name\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"RiskFlag\"},\"Name\":\"fact_ltv_daily_snapshot.RiskFlag\",\"NativeReferenceName\":\"RiskFlag\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"LTV_Percentage\"},\"Name\":\"Sum(fact_ltv_daily_snapshot.LTV_Percentage)\",\"NativeReferenceName\":\"LTV_Percentage1\"},{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"TotalOutstandingBalance\"}},\"Function\":0},\"Name\":\"Sum(fact_ltv_daily_snapshot.TotalOutstandingBalance)\",\"NativeReferenceName\":\"Total Outstanding Balance\"},{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"TotalCollateralValue\"}},\"Function\":0},\"Name\":\"Sum(fact_ltv_daily_snapshot.TotalCollateralValue)\",\"NativeReferenceName\":\"Total Collateral Value\"},{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"CollateralCoverageShortfall\"}},\"Function\":0},\"Name\":\"Sum(fact_ltv_daily_snapshot.CollateralCoverageShortfall)\",\"NativeReferenceName\":\"Collateral Coverage Shortfall\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"ImmediateActionRequired\"},\"Name\":\"fact_ltv_daily_snapshot.ImmediateActionRequired\",\"NativeReferenceName\":\"ImmediateActionRequired\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"DataFreshnessStatus\"},\"Name\":\"fact_ltv_daily_snapshot.DataFreshnessStatus\",\"NativeReferenceName\":\"DataFreshnessStatus\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d2\"}},\"Property\":\"OfficerFullName\"},\"Name\":\"dim_collections_officer.OfficerFullName\",\"NativeReferenceName\":\"Account Officer\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"LTV_Percentage\"}}}]},\"columnProperties\":{\"Sum(fact_ltv_daily_snapshot.TotalOutstandingBalance)\":{\"displayName\":\"Total Outstanding Balance\",\"formatString\":\"\\\\$#,0.00;(\\\\$#,0.00);\\\\$#,0.00\"},\"Sum(fact_ltv_daily_snapshot.CollateralCoverageShortfall)\":{\"displayName\":\"Collateral Coverage Shortfall\",\"formatString\":\"\\\\$#,0.00;(\\\\$#,0.00);\\\\$#,0.00\"},\"Sum(fact_ltv_daily_snapshot.TotalCollateralValue)\":{\"displayName\":\"Total Collateral Value\",\"formatString\":\"\\\\$#,0.00;(\\\\$#,0.00);\\\\$#,0.00\"},\"Sum(fact_ltv_daily_snapshot.LTV_Percentage)\":{\"displayName\":\"LTV_Percentage\",\"formatString\":\"0.0 %;-0.0 %;0.0 %\"},\"dim_debtor.FullName\":{\"displayName\":\"Debtor\"},\"dim_client_bank.ClientName\":{\"displayName\":\"Client's Name\"},\"dim_collections_officer.OfficerFullName\":{\"displayName\":\"Account Officer\"}},\"drillFilterOtherVisuals\":true,\"objects\":{\"values\":[{\"properties\":{\"fontColor\":{\"solid\":{\"color\":{\"expr\":{\"Conditional\":{\"Cases\":[{\"Condition\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Function\":3}},\"Right\":{\"Literal\":{\"Value\":\"'UNDETERMINED'\"}}},\"Annotations\":{\"PowerBI.SQExprEvaluationKind\":1,\"PowerBI.SQExprTextOperatorOption\":2}},\"Value\":{\"Literal\":{\"Value\":\"'#DEEFFF'\"}}},{\"Condition\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Function\":3}},\"Right\":{\"Literal\":{\"Value\":\"'LOW'\"}}},\"Annotations\":{\"PowerBI.SQExprEvaluationKind\":1,\"PowerBI.SQExprTextOperatorOption\":2}},\"Value\":{\"Literal\":{\"Value\":\"'#2E7D32'\"}}},{\"Condition\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Function\":3}},\"Right\":{\"Literal\":{\"Value\":\"'MEDIUM'\"}}},\"Annotations\":{\"PowerBI.SQExprEvaluationKind\":1,\"PowerBI.SQExprTextOperatorOption\":2}},\"Value\":{\"Literal\":{\"Value\":\"'#F2C12E'\"}}},{\"Condition\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Function\":3}},\"Right\":{\"Literal\":{\"Value\":\"'HIGH'\"}}},\"Annotations\":{\"PowerBI.SQExprEvaluationKind\":1,\"PowerBI.SQExprTextOperatorOption\":2}},\"Value\":{\"Literal\":{\"Value\":\"'#E8720C'\"}}},{\"Condition\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Aggregation\":{\"Expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Function\":3}},\"Right\":{\"Literal\":{\"Value\":\"'CRITICAL'\"}}},\"Annotations\":{\"PowerBI.SQExprEvaluationKind\":1,\"PowerBI.SQExprTextOperatorOption\":2}},\"Value\":{\"Literal\":{\"Value\":\"'#C0001A'\"}}}]}}}}}},\"selector\":{\"data\":[{\"dataViewWildcard\":{\"matchingOption\":1}}],\"metadata\":\"fact_ltv_daily_snapshot.RiskFlag\"}}],\"total\":[{\"properties\":{\"totals\":{\"expr\":{\"Literal\":{\"Value\":\"false\"}}}}}]},\"vcObjects\":{\"stylePreset\":[{\"properties\":{\"name\":{\"expr\":{\"Literal\":{\"Value\":\"'BoldHeaderFlashyRows'\"}}}}}]}}}",
+          "filters": "[]",
+          "height": 319.17,
+          "width": 1205.83,
+          "x": 0.00,
+          "y": 383.33,
+          "z": 0.00
         }
       ],
       "width": 1280.00
