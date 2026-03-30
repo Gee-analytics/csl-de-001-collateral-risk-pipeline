@@ -79,7 +79,8 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 | Requirement | Implementation |
 | :--- | :--- |
 | PII Protection | SHA-256 hashing of phone, email, and address at Silver layer |
-| Row Level Security | Power BI RLS via officer_client_mapping table |
+| Row Level Security | Three RLS roles in semantic model: CollectionsOfficer filters on OfficerEmail = USERPRINCIPALNAME(), RiskAnalyst and Admin have full visibility |
+| Object Level Security | OLS design complete restricting PhoneNumber, EmailAddress, ResidentialAddress in dim_debtor to CollectionsOfficer and Admin roles only. Implementation pending XMLA endpoint access. |
 | Access Control | Microsoft Fabric workspace roles |
 | Audit Trail | Pipeline run metadata table |
 | Data Lineage | Documented from source to Gold layer |
@@ -100,6 +101,23 @@ The master Fabric Data Pipeline executes all steps in dependency order daily at 
 
 Failed steps trigger an email alert to the Data Engineering team. Each step logs to a pipeline metadata table.
 
+### Power BI Risk Command Centre
+
+The dashboard connects to the Gold layer star schema via Direct Lake mode,
+reading Delta files directly from OneLake without data import. Four views
+are designed:
+
+| View | Purpose | Status |
+| :--- | :--- | :--- |
+| Portfolio LTV Summary | Executive overview of risk distribution across all client banks | Complete |
+| Debtor Collateral Health | Full debtor level detail table with LTV, balances, and risk flags | Complete |
+| High Risk Accounts | Operational action list for collection officers filtered to ImmediateActionRequired accounts | Complete |
+| Collateral Value Trend | Time series of asset price movement and LTV ratio change over time | Planned - requires minimum 5 daily snapshots |
+
+The semantic model implements a star schema with 2 fact tables and 6 dimension
+tables. All fact-to-dimension relationships use surrogate keys with Assume
+Referential Integrity enabled, backed by upstream referential integrity
+validation in the Gold notebook.
 
 ### LTV Calculation Logic
 
@@ -107,7 +125,7 @@ Total Collateral Value = SUM(QuantityHeld x CurrentMarketPrice) for all tickers 
 LTV Ratio = OutstandingBalance / Total Collateral Value
 High Risk Flag = TRUE where LTV Ratio > 0.80
 
-Edge case handling: where no price exists for a ticker on the current date, the most recent available price within the last 5 business days is used. Records with no price within 5 days are flagged as STALE DATA and excluded from LTV calculation.
+Edge case handling: where no price exists for a ticker on the current date, the most recent available price within the last 5 business days is used and the record is flagged STALE. <br> Where no price exists within 5 business days, the record is flagged MISSING and excluded from LTV calculation until resolved.
 
 ### Architecture Decision Notes
 
