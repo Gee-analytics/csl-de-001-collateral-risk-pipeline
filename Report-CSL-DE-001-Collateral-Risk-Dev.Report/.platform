@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Report",
+    "displayName": "Report-CSL-DE-001-Collateral-Risk-Dev"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "6dde9d6a-d43c-b46e-4ba3-a2f03b35dad2"
+  }
+}

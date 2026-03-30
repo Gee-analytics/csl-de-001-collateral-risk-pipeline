@@ -1,0 +1,69 @@
+{
+  "config": "{\"version\":\"5.72\",\"themeCollection\":{\"baseTheme\":{\"name\":\"CY26SU04\",\"type\":2,\"version\":{\"visual\":\"2.8.0\",\"report\":\"3.2.0\",\"page\":\"2.3.1\"}}},\"activeSectionIndex\":0,\"defaultDrillFilterOtherVisuals\":true,\"linguisticSchemaSyncVersion\":0,\"settings\":{\"useNewFilterPaneExperience\":true,\"allowChangeFilterTypes\":true,\"useStylableVisualContainerHeader\":true,\"queryLimitOption\":6,\"useEnhancedTooltips\":true,\"exportDataMode\":1,\"useDefaultAggregateDisplayName\":true},\"objects\":{\"section\":[{\"properties\":{\"verticalAlignment\":{\"expr\":{\"Literal\":{\"Value\":\"'Top'\"}}}}}],\"outspacePane\":[{\"properties\":{\"expanded\":{\"expr\":{\"Literal\":{\"Value\":\"true\"}}}}}]}}",
+  "layoutOptimization": 0,
+  "resourcePackages": [
+    {
+      "resourcePackage": {
+        "disabled": false,
+        "items": [
+          {
+            "name": "CY26SU04",
+            "path": "BaseThemes/CY26SU04.json",
+            "type": 202
+          }
+        ],
+        "name": "SharedResources",
+        "type": 2
+      }
+    }
+  ],
+  "sections": [
+    {
+      "config": "{}",
+      "displayName": "Page 1",
+      "displayOption": 1,
+      "filters": "[{\"name\":\"c4471dd458d5eea9cef1\",\"expression\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"DateKey\"}},\"filter\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"fact_ltv_daily_snapshot\",\"Type\":0}],\"Where\":[{\"Condition\":{\"In\":{\"Expressions\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"DateKey\"}}],\"Values\":[[{\"Literal\":{\"Value\":\"20260329L\"}}]]}}}]},\"type\":\"Categorical\",\"howCreated\":1,\"objects\":{}}]",
+      "height": 720.00,
+      "name": "2913bb530d767a861fee",
+      "visualContainers": [
+        {
+          "config": "{\"name\":\"40363decf7052a5e59bf\",\"layouts\":[{\"id\":0,\"position\":{\"x\":22.157123834886818,\"y\":155.09986684420772,\"z\":0,\"width\":668.1225033288948,\"height\":544.5539280958723,\"tabOrder\":0}}],\"singleVisual\":{\"visualType\":\"clusteredBarChart\",\"projections\":{\"Category\":[{\"queryRef\":\"fact_ltv_daily_snapshot.RiskFlag\",\"active\":true}],\"Y\":[{\"queryRef\":\"_Measures.Total Accounts\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"f\",\"Entity\":\"fact_ltv_daily_snapshot\",\"Type\":0},{\"Name\":\"_\",\"Entity\":\"_Measures\",\"Type\":0}],\"Select\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"f\"}},\"Property\":\"RiskFlag\"},\"Name\":\"fact_ltv_daily_snapshot.RiskFlag\",\"NativeReferenceName\":\"Count of RiskFlag\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Total Accounts\"},\"Name\":\"_Measures.Total Accounts\",\"NativeReferenceName\":\"Total Accounts\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Total Accounts\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true,\"objects\":{\"dataPoint\":[{\"properties\":{\"fill\":{\"solid\":{\"color\":{\"expr\":{\"Literal\":{\"Value\":\"'#C0001A'\"}}}}}},\"selector\":{\"data\":[{\"scopeId\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Right\":{\"Literal\":{\"Value\":\"'CRITICAL'\"}}}}}]}},{\"properties\":{\"fill\":{\"solid\":{\"color\":{\"expr\":{\"Literal\":{\"Value\":\"'#E8720C'\"}}}}}},\"selector\":{\"data\":[{\"scopeId\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Right\":{\"Literal\":{\"Value\":\"'HIGH'\"}}}}}]}},{\"properties\":{\"fill\":{\"solid\":{\"color\":{\"expr\":{\"Literal\":{\"Value\":\"'#F2C12E'\"}}}}}},\"selector\":{\"data\":[{\"scopeId\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Right\":{\"Literal\":{\"Value\":\"'MEDIUM'\"}}}}}]}},{\"properties\":{\"fill\":{\"solid\":{\"color\":{\"expr\":{\"Literal\":{\"Value\":\"'#2E7D32'\"}}}}}},\"selector\":{\"data\":[{\"scopeId\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Right\":{\"Literal\":{\"Value\":\"'LOW'\"}}}}}]}},{\"properties\":{\"fill\":{\"solid\":{\"color\":{\"expr\":{\"Literal\":{\"Value\":\"'#9E9E9E'\"}}}}}},\"selector\":{\"data\":[{\"scopeId\":{\"Comparison\":{\"ComparisonKind\":0,\"Left\":{\"Column\":{\"Expression\":{\"SourceRef\":{\"Entity\":\"fact_ltv_daily_snapshot\"}},\"Property\":\"RiskFlag\"}},\"Right\":{\"Literal\":{\"Value\":\"'UNDETERMINED'\"}}}}}]}}]}}}",
+          "filters": "[]",
+          "height": 544.55,
+          "width": 668.12,
+          "x": 22.16,
+          "y": 155.10,
+          "z": 0.00
+        },
+        {
+          "config": "{\"name\":\"7daefef343b7b12307b1\",\"layouts\":[{\"id\":0,\"position\":{\"x\":718.4021304926765,\"y\":408.202396804261,\"z\":2000,\"width\":547.1105193075899,\"height\":302.52996005326236,\"tabOrder\":2000}}],\"singleVisual\":{\"visualType\":\"clusteredBarChart\",\"projections\":{\"Y\":[{\"queryRef\":\"_Measures.Average LTV Ratio\"}],\"Category\":[{\"queryRef\":\"dim_client_bank.ClientName\",\"active\":true}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"_\",\"Entity\":\"_Measures\",\"Type\":0},{\"Name\":\"d\",\"Entity\":\"dim_client_bank\",\"Type\":0}],\"Select\":[{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Average LTV Ratio\"},\"Name\":\"_Measures.Average LTV Ratio\",\"NativeReferenceName\":\"Average LTV Ratio\"},{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"ClientName\"},\"Name\":\"dim_client_bank.ClientName\",\"NativeReferenceName\":\"ClientName\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Average LTV Ratio\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 302.53,
+          "width": 547.11,
+          "x": 718.40,
+          "y": 408.20,
+          "z": 2000.00
+        },
+        {
+          "config": "{\"name\":\"968ce3ed50e36376ff42\",\"layouts\":[{\"id\":0,\"position\":{\"x\":718.4021304926765,\"y\":127.8295605858855,\"z\":3000,\"width\":533.4753661784288,\"height\":270.99866844207725,\"tabOrder\":3000}}],\"singleVisual\":{\"visualType\":\"clusteredBarChart\",\"projections\":{\"Category\":[{\"queryRef\":\"dim_client_bank.ClientName\",\"active\":true}],\"Y\":[{\"queryRef\":\"_Measures.Immediate Action Count\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"d\",\"Entity\":\"dim_client_bank\",\"Type\":0},{\"Name\":\"_\",\"Entity\":\"_Measures\",\"Type\":0}],\"Select\":[{\"Column\":{\"Expression\":{\"SourceRef\":{\"Source\":\"d\"}},\"Property\":\"ClientName\"},\"Name\":\"dim_client_bank.ClientName\",\"NativeReferenceName\":\"ClientName\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Immediate Action Count\"},\"Name\":\"_Measures.Immediate Action Count\",\"NativeReferenceName\":\"Immediate Action Count\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Immediate Action Count\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 271.00,
+          "width": 533.48,
+          "x": 718.40,
+          "y": 127.83,
+          "z": 3000.00
+        },
+        {
+          "config": "{\"name\":\"c8ffb21266c63f2f06c2\",\"layouts\":[{\"id\":0,\"position\":{\"x\":22.157123834886818,\"y\":17.896138482023968,\"z\":1000,\"width\":1243.3555259653797,\"height\":120.15978695073237,\"tabOrder\":1000}}],\"singleVisual\":{\"visualType\":\"cardVisual\",\"projections\":{\"Data\":[{\"queryRef\":\"_Measures.High Risk Account Count\"},{\"queryRef\":\"_Measures.Critical Account Count\"},{\"queryRef\":\"_Measures.Immediate Action Count\"},{\"queryRef\":\"_Measures.Latest Snapshot Date\"},{\"queryRef\":\"_Measures.Total Collateral Value\"},{\"queryRef\":\"_Measures.Total Outstanding Balance\"}]},\"prototypeQuery\":{\"Version\":2,\"From\":[{\"Name\":\"_\",\"Entity\":\"_Measures\",\"Type\":0}],\"Select\":[{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Total Collateral Value\"},\"Name\":\"_Measures.Total Collateral Value\",\"NativeReferenceName\":\"Total Collateral Value\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Immediate Action Count\"},\"Name\":\"_Measures.Immediate Action Count\",\"NativeReferenceName\":\"Immediate Action Count\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Critical Account Count\"},\"Name\":\"_Measures.Critical Account Count\",\"NativeReferenceName\":\"Critical Account Count\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Latest Snapshot Date\"},\"Name\":\"_Measures.Latest Snapshot Date\",\"NativeReferenceName\":\"Latest Snapshot Date\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"Total Outstanding Balance\"},\"Name\":\"_Measures.Total Outstanding Balance\",\"NativeReferenceName\":\"Total Outstanding Balance\"},{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"High Risk Account Count\"},\"Name\":\"_Measures.High Risk Account Count\",\"NativeReferenceName\":\"High Risk Account Count\"}],\"OrderBy\":[{\"Direction\":2,\"Expression\":{\"Measure\":{\"Expression\":{\"SourceRef\":{\"Source\":\"_\"}},\"Property\":\"High Risk Account Count\"}}}]},\"drillFilterOtherVisuals\":true,\"hasDefaultSort\":true}}",
+          "filters": "[]",
+          "height": 120.16,
+          "width": 1243.36,
+          "x": 22.16,
+          "y": 17.90,
+          "z": 1000.00
+        }
+      ],
+      "width": 1280.00
+    }
+  ]
+}
