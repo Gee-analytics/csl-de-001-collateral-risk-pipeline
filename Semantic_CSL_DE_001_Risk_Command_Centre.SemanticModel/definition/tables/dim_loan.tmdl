@@ -1,0 +1,178 @@
+table dim_loan
+	lineageTag: 485112a8-f490-402a-9369-940568fdb647
+	sourceLineageTag: [dbo].[dim_loan]
+
+	column LoanSurrogateKey
+		dataType: string
+		lineageTag: b9ed7f11-667f-42bb-b927-2f2e28b54898
+		sourceLineageTag: LoanSurrogateKey
+		summarizeBy: none
+		sourceColumn: LoanSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column LoanID
+		dataType: string
+		lineageTag: 85a128fc-c23f-4bba-9f72-0287407b2227
+		sourceLineageTag: LoanID
+		summarizeBy: none
+		sourceColumn: LoanID
+
+		annotation SummarizationSetBy = Automatic
+
+	column DebtorID
+		dataType: string
+		lineageTag: a8d9498c-ad9c-4c51-b4a0-d9b59a8adcfb
+		sourceLineageTag: DebtorID
+		summarizeBy: none
+		sourceColumn: DebtorID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientID
+		dataType: string
+		lineageTag: 5cc3770f-dd2d-441d-922a-d87237df7076
+		sourceLineageTag: ClientID
+		summarizeBy: none
+		sourceColumn: ClientID
+
+		annotation SummarizationSetBy = Automatic
+
+	column InitialLoanAmount
+		dataType: double
+		lineageTag: 1a7381b7-17b8-4f51-ad1f-fe1107d53d2b
+		sourceLineageTag: InitialLoanAmount
+		summarizeBy: none
+		sourceColumn: InitialLoanAmount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column OutstandingBalance
+		dataType: double
+		lineageTag: 2a078303-1598-45fb-9a16-eab3124d681e
+		sourceLineageTag: OutstandingBalance
+		summarizeBy: none
+		sourceColumn: OutstandingBalance
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column LoanStartDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 1b96388a-cf24-447b-9594-5f6080d72a0d
+		sourceLineageTag: LoanStartDate
+		summarizeBy: none
+		sourceColumn: LoanStartDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column LoanMaturityDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 31936a42-e2aa-4a9b-b831-865045fd7e98
+		sourceLineageTag: LoanMaturityDate
+		summarizeBy: none
+		sourceColumn: LoanMaturityDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column LoanStatus
+		dataType: string
+		lineageTag: e9a795a0-6abe-42e4-a0c4-5189ec086ca2
+		sourceLineageTag: LoanStatus
+		summarizeBy: none
+		sourceColumn: LoanStatus
+
+		annotation SummarizationSetBy = Automatic
+
+	column DaysPastDue
+		dataType: int64
+		formatString: 0
+		lineageTag: 47f73e9b-c73e-4547-9617-bdcf04cf9f53
+		sourceLineageTag: DaysPastDue
+		summarizeBy: none
+		sourceColumn: DaysPastDue
+
+		annotation SummarizationSetBy = Automatic
+
+	column LastPaymentDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 982d4eac-2173-4c33-aea4-d8a49a861369
+		sourceLineageTag: LastPaymentDate
+		summarizeBy: none
+		sourceColumn: LastPaymentDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column LastPaymentAmount
+		dataType: double
+		lineageTag: 5f52c203-8ba1-49e8-8e4f-f0813d24a838
+		sourceLineageTag: LastPaymentAmount
+		summarizeBy: none
+		sourceColumn: LastPaymentAmount
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column EffectiveStartDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 4fec72fb-4430-4d9d-937d-c87df2bfb350
+		sourceLineageTag: EffectiveStartDate
+		summarizeBy: none
+		sourceColumn: EffectiveStartDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveEndDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: d4c5eb6e-0096-4577-8f74-1bb3fec2eb91
+		sourceLineageTag: EffectiveEndDate
+		summarizeBy: none
+		sourceColumn: EffectiveEndDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column IsCurrent
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: d22a7a60-7763-42d1-ab25-f01570da5730
+		sourceLineageTag: IsCurrent
+		summarizeBy: none
+		sourceColumn: IsCurrent
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_load_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: c4eae282-a118-401b-8017-c3c8ef3b5f3c
+		sourceLineageTag: gold_load_date
+		summarizeBy: none
+		sourceColumn: gold_load_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: a28fb773-c770-4ff4-9a69-4c98c26bff65
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_loan = entity
+		mode: directLake
+		source
+			entityName: dim_loan
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+

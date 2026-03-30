@@ -1,0 +1,160 @@
+table dim_debtor
+	lineageTag: 50136c04-a0e0-4b1a-9fd5-f4efce9417d5
+	sourceLineageTag: [dbo].[dim_debtor]
+
+	column DebtorSurrogateKey
+		dataType: string
+		lineageTag: c43cdca5-c601-4f71-8f06-167bfe3ce4a3
+		sourceLineageTag: DebtorSurrogateKey
+		summarizeBy: none
+		sourceColumn: DebtorSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column DebtorID
+		dataType: string
+		lineageTag: a18c5e81-da8b-4b48-b55f-cd3ce3e47c38
+		sourceLineageTag: DebtorID
+		summarizeBy: none
+		sourceColumn: DebtorID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientID
+		dataType: string
+		lineageTag: c6ebe009-42cf-4661-94ef-078e13cf9572
+		sourceLineageTag: ClientID
+		summarizeBy: none
+		sourceColumn: ClientID
+
+		annotation SummarizationSetBy = Automatic
+
+	column AssignedOfficerID
+		dataType: string
+		lineageTag: e6223ac6-fa46-4ff8-90fd-f65e0e29294d
+		sourceLineageTag: AssignedOfficerID
+		summarizeBy: none
+		sourceColumn: AssignedOfficerID
+
+		annotation SummarizationSetBy = Automatic
+
+	column FullName
+		dataType: string
+		lineageTag: 6fef523e-c077-427d-93d0-59de1f1fa869
+		sourceLineageTag: FullName
+		summarizeBy: none
+		sourceColumn: FullName
+
+		annotation SummarizationSetBy = Automatic
+
+	column NationalID
+		dataType: string
+		lineageTag: 62d4ea64-4978-4c69-97dd-88ff2e4d5a2f
+		sourceLineageTag: NationalID
+		summarizeBy: none
+		sourceColumn: NationalID
+
+		annotation SummarizationSetBy = Automatic
+
+	column PhoneNumber
+		dataType: string
+		lineageTag: 9c230907-ae97-48b1-a46f-19240c22f2f4
+		sourceLineageTag: PhoneNumber
+		summarizeBy: none
+		sourceColumn: PhoneNumber
+
+		annotation SummarizationSetBy = Automatic
+
+	column EmailAddress
+		dataType: string
+		lineageTag: 7eab501c-f2cc-4a10-bc03-d1ca6fcb1012
+		sourceLineageTag: EmailAddress
+		summarizeBy: none
+		sourceColumn: EmailAddress
+
+		annotation SummarizationSetBy = Automatic
+
+	column ResidentialAddress
+		dataType: string
+		lineageTag: 65a27a28-60cd-4009-a077-4569c94865fc
+		sourceLineageTag: ResidentialAddress
+		summarizeBy: none
+		sourceColumn: ResidentialAddress
+
+		annotation SummarizationSetBy = Automatic
+
+	column Region
+		dataType: string
+		lineageTag: 119662e8-490c-4af6-915b-d370a4003522
+		sourceLineageTag: Region
+		summarizeBy: none
+		sourceColumn: Region
+
+		annotation SummarizationSetBy = Automatic
+
+	column DateOnboarded
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: f1e79c5c-ef23-47cc-80aa-794fdef14d99
+		sourceLineageTag: DateOnboarded
+		summarizeBy: none
+		sourceColumn: DateOnboarded
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveStartDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 14e65709-f5d3-4ab1-bf1d-640b887b3458
+		sourceLineageTag: EffectiveStartDate
+		summarizeBy: none
+		sourceColumn: EffectiveStartDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveEndDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: aed5efb2-b787-4181-b68e-4dcd1bc8ff5f
+		sourceLineageTag: EffectiveEndDate
+		summarizeBy: none
+		sourceColumn: EffectiveEndDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column IsCurrent
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 1324de55-28fd-4a8e-b2be-fa9815c6705c
+		sourceLineageTag: IsCurrent
+		summarizeBy: none
+		sourceColumn: IsCurrent
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_load_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 7ee2a750-0100-4609-9669-cfa20dfc34bc
+		sourceLineageTag: gold_load_date
+		summarizeBy: none
+		sourceColumn: gold_load_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: 981c0b0f-bccc-48bd-8aab-8a3aeda08d47
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_debtor = entity
+		mode: directLake
+		source
+			entityName: dim_debtor
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+

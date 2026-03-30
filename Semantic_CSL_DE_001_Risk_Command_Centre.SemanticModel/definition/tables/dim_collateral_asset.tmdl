@@ -1,0 +1,156 @@
+table dim_collateral_asset
+	lineageTag: fe163371-d69a-4739-91d0-0721a27f118d
+	sourceLineageTag: [dbo].[dim_collateral_asset]
+
+	column CollateralSurrogateKey
+		dataType: string
+		lineageTag: 215f9dee-7c32-4998-9fba-55b021abd6b7
+		sourceLineageTag: CollateralSurrogateKey
+		summarizeBy: none
+		sourceColumn: CollateralSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column CollateralID
+		dataType: string
+		lineageTag: 717a4ffe-c725-43e1-9f26-d8b452a42909
+		sourceLineageTag: CollateralID
+		summarizeBy: none
+		sourceColumn: CollateralID
+
+		annotation SummarizationSetBy = Automatic
+
+	column LoanID
+		dataType: string
+		lineageTag: b4a50776-d02c-42c8-86b9-7f168e994f5b
+		sourceLineageTag: LoanID
+		summarizeBy: none
+		sourceColumn: LoanID
+
+		annotation SummarizationSetBy = Automatic
+
+	column DebtorID
+		dataType: string
+		lineageTag: c7650398-77b6-4da0-a4ab-0ecc5350954a
+		sourceLineageTag: DebtorID
+		summarizeBy: none
+		sourceColumn: DebtorID
+
+		annotation SummarizationSetBy = Automatic
+
+	column TickerSymbol
+		dataType: string
+		lineageTag: c902489b-b47e-454c-b550-3e3d13fe14c0
+		sourceLineageTag: TickerSymbol
+		summarizeBy: none
+		sourceColumn: TickerSymbol
+
+		annotation SummarizationSetBy = Automatic
+
+	column AssetType
+		dataType: string
+		lineageTag: 3aae2c8c-ede0-47cb-80f9-45b1de1ac80f
+		sourceLineageTag: AssetType
+		summarizeBy: none
+		sourceColumn: AssetType
+
+		annotation SummarizationSetBy = Automatic
+
+	column QuantityHeld
+		dataType: decimal
+		formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+		lineageTag: 3614b256-ee4b-44e7-a528-9405ba84d685
+		sourceLineageTag: QuantityHeld
+		summarizeBy: none
+		sourceColumn: QuantityHeld
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	column CollateralValueAtPledge
+		dataType: double
+		lineageTag: b876b9c7-ad8d-41b6-b3c1-0007a3c0b4c8
+		sourceLineageTag: CollateralValueAtPledge
+		summarizeBy: none
+		sourceColumn: CollateralValueAtPledge
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column CollateralPledgeDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 247d6e7d-ebe8-4794-b5dd-c69686de89cd
+		sourceLineageTag: CollateralPledgeDate
+		summarizeBy: none
+		sourceColumn: CollateralPledgeDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column Exchange
+		dataType: string
+		lineageTag: d613a945-1752-4801-8183-6810bed5b7e7
+		sourceLineageTag: Exchange
+		summarizeBy: none
+		sourceColumn: Exchange
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveStartDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: d4e0d33a-d6da-4a32-a001-b07d6fc0506e
+		sourceLineageTag: EffectiveStartDate
+		summarizeBy: none
+		sourceColumn: EffectiveStartDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveEndDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: c3854e18-1ea1-42b2-a0a0-76bc31604246
+		sourceLineageTag: EffectiveEndDate
+		summarizeBy: none
+		sourceColumn: EffectiveEndDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column IsCurrent
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 07af6917-5e48-45b6-a2da-506a63edc324
+		sourceLineageTag: IsCurrent
+		summarizeBy: none
+		sourceColumn: IsCurrent
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_load_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 7edd1739-f3dc-41bc-83a6-8321790ee10b
+		sourceLineageTag: gold_load_date
+		summarizeBy: none
+		sourceColumn: gold_load_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: 04dda7ae-56cb-43f0-8087-9f974cac24e6
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_collateral_asset = entity
+		mode: directLake
+		source
+			entityName: dim_collateral_asset
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+

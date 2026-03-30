@@ -1,0 +1,122 @@
+table fact_market_prices_daily
+	lineageTag: dd0e52e4-eeb2-475d-a8b7-2512aaae5394
+	sourceLineageTag: [dbo].[fact_market_prices_daily]
+
+	column DateKey
+		dataType: int64
+		formatString: 0
+		lineageTag: bf144b08-aefa-46d8-9fb8-b7bfe24ca7a4
+		sourceLineageTag: DateKey
+		summarizeBy: none
+		sourceColumn: DateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column PriceDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 0e69c760-89e1-463b-aa41-6fd3daa9feae
+		sourceLineageTag: PriceDate
+		summarizeBy: none
+		sourceColumn: PriceDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column TickerSymbol
+		dataType: string
+		lineageTag: b28656ad-03b3-4e5d-ac29-2eed72223f7b
+		sourceLineageTag: TickerSymbol
+		summarizeBy: none
+		sourceColumn: TickerSymbol
+
+		annotation SummarizationSetBy = Automatic
+
+	column AssetType
+		dataType: string
+		lineageTag: 5dff0872-6210-4ea1-bd3f-6502b3c715ba
+		sourceLineageTag: AssetType
+		summarizeBy: none
+		sourceColumn: AssetType
+
+		annotation SummarizationSetBy = Automatic
+
+	column OpenPrice
+		dataType: double
+		lineageTag: fc15a140-f68f-4e33-8fee-7af8e5af47d0
+		sourceLineageTag: OpenPrice
+		summarizeBy: sum
+		sourceColumn: OpenPrice
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column HighPrice
+		dataType: double
+		lineageTag: 87cac34c-e5d6-4e04-957d-baf9c5f702f4
+		sourceLineageTag: HighPrice
+		summarizeBy: sum
+		sourceColumn: HighPrice
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column LowPrice
+		dataType: double
+		lineageTag: 3fcc811c-8e70-43ad-a1dd-bc6ee48895d8
+		sourceLineageTag: LowPrice
+		summarizeBy: sum
+		sourceColumn: LowPrice
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column ClosePrice
+		dataType: double
+		lineageTag: 18104488-ce2f-4d71-9a00-414ce1f9a339
+		sourceLineageTag: ClosePrice
+		summarizeBy: sum
+		sourceColumn: ClosePrice
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column Volume
+		dataType: int64
+		formatString: 0
+		lineageTag: 02934e1b-323b-473b-b818-8c4da3998b55
+		sourceLineageTag: Volume
+		summarizeBy: sum
+		sourceColumn: Volume
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_load_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: a96e19a4-fafe-49d3-a0de-3d78d8cd532b
+		sourceLineageTag: gold_load_date
+		summarizeBy: none
+		sourceColumn: gold_load_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: 6a4eeeba-108c-4adf-a495-1b3435124069
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition fact_market_prices_daily = entity
+		mode: directLake
+		source
+			entityName: fact_market_prices_daily
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+

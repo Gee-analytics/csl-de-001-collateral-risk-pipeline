@@ -1,0 +1,142 @@
+table dim_collections_officer
+	lineageTag: ec56dfbb-bd1c-4eda-98ac-886056671ee7
+	sourceLineageTag: [dbo].[dim_collections_officer]
+
+	column OfficerSurrogateKey
+		dataType: string
+		lineageTag: f2ca7585-1e2d-4395-a8a2-b454b8b5366d
+		sourceLineageTag: OfficerSurrogateKey
+		summarizeBy: none
+		sourceColumn: OfficerSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerID
+		dataType: string
+		lineageTag: dbb77734-cf10-4fc8-bd57-cd4028250acb
+		sourceLineageTag: OfficerID
+		summarizeBy: none
+		sourceColumn: OfficerID
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerFullName
+		dataType: string
+		lineageTag: 8cdabe31-0e0d-4144-9f29-f62dcffee9d4
+		sourceLineageTag: OfficerFullName
+		summarizeBy: none
+		sourceColumn: OfficerFullName
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerEmail
+		dataType: string
+		lineageTag: 9c4fb0eb-a4f2-4d81-a0e8-ebff642fe47f
+		sourceLineageTag: OfficerEmail
+		summarizeBy: none
+		sourceColumn: OfficerEmail
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerPhoneNumber
+		dataType: string
+		lineageTag: 0616b4f6-e0f4-479c-9f73-eb8a28324343
+		sourceLineageTag: OfficerPhoneNumber
+		summarizeBy: none
+		sourceColumn: OfficerPhoneNumber
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerRegion
+		dataType: string
+		lineageTag: 9773f435-f357-4c4a-93e5-90dcfd563974
+		sourceLineageTag: OfficerRegion
+		summarizeBy: none
+		sourceColumn: OfficerRegion
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerStatus
+		dataType: string
+		lineageTag: b08fb264-eae1-484c-a384-8320e371904e
+		sourceLineageTag: OfficerStatus
+		summarizeBy: none
+		sourceColumn: OfficerStatus
+
+		annotation SummarizationSetBy = Automatic
+
+	column DateJoined
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 711e11ff-0173-4d97-9cdd-879a385e8f94
+		sourceLineageTag: DateJoined
+		summarizeBy: none
+		sourceColumn: DateJoined
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientID
+		dataType: string
+		lineageTag: 691f9de7-986c-4baa-a65d-4d76144ea68e
+		sourceLineageTag: ClientID
+		summarizeBy: none
+		sourceColumn: ClientID
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveStartDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 952078f6-e58f-4d11-8f24-b681d351f797
+		sourceLineageTag: EffectiveStartDate
+		summarizeBy: none
+		sourceColumn: EffectiveStartDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column EffectiveEndDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: bf76a1da-efc5-4bff-a176-ab5cc46f6213
+		sourceLineageTag: EffectiveEndDate
+		summarizeBy: none
+		sourceColumn: EffectiveEndDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column IsCurrent
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 32a83850-ee9a-446f-af14-3c94d4862702
+		sourceLineageTag: IsCurrent
+		summarizeBy: none
+		sourceColumn: IsCurrent
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_load_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: bece72b8-80a8-4359-beee-321f225444ce
+		sourceLineageTag: gold_load_date
+		summarizeBy: none
+		sourceColumn: gold_load_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: 6cb78fc5-b204-41c0-908d-54d36f0beb82
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_collections_officer = entity
+		mode: directLake
+		source
+			entityName: dim_collections_officer
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+

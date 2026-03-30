@@ -1,0 +1,94 @@
+table dim_client_bank
+	lineageTag: 9ec4863b-8dd5-4e53-b385-891467187eb0
+	sourceLineageTag: [dbo].[dim_client_bank]
+
+	column ClientSurrogateKey
+		dataType: string
+		lineageTag: a0c55c39-b9d6-4024-8fd2-c003b2466fec
+		sourceLineageTag: ClientSurrogateKey
+		summarizeBy: none
+		sourceColumn: ClientSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientID
+		dataType: string
+		lineageTag: 9ba75fd8-5321-41ed-9717-ad80270d42df
+		sourceLineageTag: ClientID
+		summarizeBy: none
+		sourceColumn: ClientID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientName
+		dataType: string
+		lineageTag: 02a20c43-4ef6-4dd7-83af-a3ebf81b1c0d
+		sourceLineageTag: ClientName
+		summarizeBy: none
+		sourceColumn: ClientName
+
+		annotation SummarizationSetBy = Automatic
+
+	column ContactEmail
+		dataType: string
+		lineageTag: f24b184c-da7c-4d7d-87c2-9cef03e92070
+		sourceLineageTag: ContactEmail
+		summarizeBy: none
+		sourceColumn: ContactEmail
+
+		annotation SummarizationSetBy = Automatic
+
+	column ContactPhone
+		dataType: string
+		lineageTag: b39e0a6b-3efc-4915-9704-644324e0528b
+		sourceLineageTag: ContactPhone
+		summarizeBy: none
+		sourceColumn: ContactPhone
+
+		annotation SummarizationSetBy = Automatic
+
+	column S3FolderPath
+		dataType: string
+		lineageTag: 0413bfc8-3508-46d7-8b56-8d7e2ecb39ed
+		sourceLineageTag: S3FolderPath
+		summarizeBy: none
+		sourceColumn: S3FolderPath
+
+		annotation SummarizationSetBy = Automatic
+
+	column IsActive
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 4fb0a2e8-d7a6-49d7-b160-05efb3a62312
+		sourceLineageTag: IsActive
+		summarizeBy: none
+		sourceColumn: IsActive
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_load_date
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: d7d7c674-1424-4900-933f-37dc19af8e88
+		sourceLineageTag: gold_load_date
+		summarizeBy: none
+		sourceColumn: gold_load_date
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: 3da8cc89-84e1-481f-815c-69174bec668e
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	partition dim_client_bank = entity
+		mode: directLake
+		source
+			entityName: dim_client_bank
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+

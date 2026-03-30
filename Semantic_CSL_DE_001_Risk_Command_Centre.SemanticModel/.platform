@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "SemanticModel",
+    "displayName": "Semantic_CSL_DE_001_Risk_Command_Centre"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "bc266695-3eec-902e-4817-9c6aa5398dcb"
+  }
+}

@@ -1,0 +1,29 @@
+relationship 27bfb310-3718-cb0b-decc-7935881cb1bc
+	relyOnReferentialIntegrity
+	fromColumn: fact_market_prices_daily.DateKey
+	toColumn: dim_date.DateKey
+
+relationship 4ba24f8f-039e-14a6-efff-9e7f3296f99e
+	fromColumn: fact_ltv_daily_snapshot.OfficerSurrogateKey
+	toColumn: dim_collections_officer.OfficerSurrogateKey
+
+relationship 500f555e-631d-3cb0-28c6-2fd036dea680
+	fromColumn: fact_ltv_daily_snapshot.ClientSurrogateKey
+	toColumn: dim_client_bank.ClientSurrogateKey
+
+relationship 7f31ad22-2356-9a45-2d9e-40e03d0b15e7
+	fromColumn: fact_ltv_daily_snapshot.CollateralSurrogateKey
+	toColumn: dim_collateral_asset.CollateralSurrogateKey
+
+relationship 2b41a99c-6c0d-803e-8d7e-e1d119d8924d
+	fromColumn: fact_ltv_daily_snapshot.DebtorSurrogateKey
+	toColumn: dim_debtor.DebtorSurrogateKey
+
+relationship a8754a62-752d-a51f-d0e4-b1b0c3e0a404
+	fromColumn: fact_ltv_daily_snapshot.LoanSurrogateKey
+	toColumn: dim_loan.LoanSurrogateKey
+
+relationship 814c1107-5b6a-5ae9-dfde-0ae01194dcde
+	fromColumn: fact_ltv_daily_snapshot.DateKey
+	toColumn: dim_date.DateKey
+

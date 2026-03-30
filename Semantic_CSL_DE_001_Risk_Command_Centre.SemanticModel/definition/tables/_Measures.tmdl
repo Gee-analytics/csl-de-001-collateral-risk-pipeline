@@ -1,0 +1,147 @@
+table _Measures
+	lineageTag: 2af57792-9609-4e2a-b735-2ec98828593f
+
+	measure 'Total Accounts' =
+			
+			CALCULATE(
+			    COUNTROWS(fact_ltv_daily_snapshot),
+			    FILTER(
+			        ALLEXCEPT(
+			            fact_ltv_daily_snapshot,
+			            fact_ltv_daily_snapshot[RiskFlag],
+			            fact_ltv_daily_snapshot[ImmediateActionRequired],
+			            fact_ltv_daily_snapshot[ClientID]
+			        ),
+			        fact_ltv_daily_snapshot[DateKey] = [Latest Snapshot Date]
+			    )
+			)
+		formatString: 0
+		lineageTag: a928c909-521e-4d49-9e5f-5a807efa4a1c
+
+	measure 'Immediate Action Count' =
+			
+			CALCULATE(
+			    COUNTROWS(fact_ltv_daily_snapshot),
+			    fact_ltv_daily_snapshot[ImmediateActionRequired] = TRUE()
+			)
+		formatString: 0
+		lineageTag: 8d8e1dba-2ac0-4943-9aa8-26560b4cbb2d
+
+	measure 'Average LTV Ratio' =
+			
+			AVERAGEX(
+			    FILTER(
+			        fact_ltv_daily_snapshot,
+			        NOT ISBLANK(fact_ltv_daily_snapshot[LTV_Ratio])
+			    ),
+			    fact_ltv_daily_snapshot[LTV_Ratio]
+			)
+		lineageTag: 39006786-7124-4e7c-99c4-645ab04a64b3
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Average LTV Percentage' =
+			
+			CALCULATE(
+			    AVERAGEX(
+			        FILTER(
+			            fact_ltv_daily_snapshot,
+			            NOT ISBLANK(fact_ltv_daily_snapshot[LTV_Percentage])
+			        ),
+			        fact_ltv_daily_snapshot[LTV_Percentage]
+			    ),
+			    FILTER(
+			        ALL(fact_ltv_daily_snapshot),
+			        fact_ltv_daily_snapshot[DateKey] = [Latest Snapshot Date]
+			    )
+			)
+		lineageTag: d64a8af1-b089-48f9-8c4d-e5829f2049ea
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Total Collateral Value' =
+			
+			CALCULATE(
+			    SUM(fact_ltv_daily_snapshot[TotalCollateralValue]),
+			    FILTER(
+			        ALL(fact_ltv_daily_snapshot),
+			        fact_ltv_daily_snapshot[DateKey] = [Latest Snapshot Date]
+			    )
+			)
+		lineageTag: fecf59a0-7e29-4ca0-9959-5f3e15d7f3c3
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Critical Account Count' =
+			
+			CALCULATE(
+			    COUNTROWS(fact_ltv_daily_snapshot),
+			    FILTER(
+			        ALLEXCEPT(
+			            fact_ltv_daily_snapshot,
+			            fact_ltv_daily_snapshot[RiskFlag],
+			            fact_ltv_daily_snapshot[ImmediateActionRequired],
+			            fact_ltv_daily_snapshot[ClientID]
+			        ),
+			        fact_ltv_daily_snapshot[DateKey] = [Latest Snapshot Date]
+			    ),
+			    fact_ltv_daily_snapshot[RiskFlag] = "CRITICAL"
+			)
+		formatString: 0
+		lineageTag: 990ace0c-2c5f-4d0a-91ba-64da92d9e91e
+
+	measure 'High Risk Account Count' =
+			
+			CALCULATE(
+			    COUNTROWS(fact_ltv_daily_snapshot),
+			    FILTER(
+			        ALLEXCEPT(
+			            fact_ltv_daily_snapshot,
+			            fact_ltv_daily_snapshot[RiskFlag],
+			            fact_ltv_daily_snapshot[ImmediateActionRequired],
+			            fact_ltv_daily_snapshot[ClientID]
+			        ),
+			        fact_ltv_daily_snapshot[DateKey] = [Latest Snapshot Date]
+			    ),
+			    fact_ltv_daily_snapshot[RiskFlag] = "HIGH"
+			)
+		formatString: 0
+		lineageTag: ccb942f3-1369-4325-b83c-7c7471087035
+
+	measure 'Total Outstanding Balance' =
+			
+			CALCULATE(
+			    SUM(fact_ltv_daily_snapshot[TotalOutstandingBalance]),
+			    FILTER(
+			        ALL(fact_ltv_daily_snapshot),
+			        fact_ltv_daily_snapshot[DateKey] = [Latest Snapshot Date]
+			    )
+			)
+		lineageTag: 439149dd-2147-4cec-bcca-66a360c3d527
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	measure 'Latest Snapshot Date' =
+			
+			CALCULATE(
+			    MAX(fact_ltv_daily_snapshot[DateKey]),
+			    ALL(fact_ltv_daily_snapshot)
+			)
+		formatString: 0
+		lineageTag: 33167f78-436e-4bd5-a554-9293d9e69db3
+
+	column Value
+		formatString: 0
+		lineageTag: 52ac05ff-ad5f-4907-ac4c-57e8217406e4
+		summarizeBy: sum
+		isNameInferred
+		sourceColumn: [Value]
+
+		annotation SummarizationSetBy = Automatic
+
+	partition _Measures = calculated
+		mode: import
+		source = {BLANK()}
+
+	annotation PBI_Id = 0901657061ff4306b64d2392e3986932
+

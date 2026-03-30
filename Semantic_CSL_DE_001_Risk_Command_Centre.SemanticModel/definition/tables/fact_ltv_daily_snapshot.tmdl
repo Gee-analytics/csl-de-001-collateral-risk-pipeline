@@ -1,0 +1,326 @@
+table fact_ltv_daily_snapshot
+	lineageTag: 78d40ad6-3744-492a-bbc8-1af5c65cb1d3
+	sourceLineageTag: [dbo].[fact_ltv_daily_snapshot]
+
+	column DateKey
+		dataType: int64
+		formatString: 0
+		lineageTag: d9fb683c-6355-447a-b3a0-1a3e5e10f28a
+		sourceLineageTag: DateKey
+		summarizeBy: none
+		sourceColumn: DateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column DebtorID
+		dataType: string
+		lineageTag: 2ce6ed2c-842b-4e0b-b14b-8595b7622538
+		sourceLineageTag: DebtorID
+		summarizeBy: none
+		sourceColumn: DebtorID
+
+		annotation SummarizationSetBy = Automatic
+
+	column LoanID
+		dataType: string
+		lineageTag: f1cdb170-5c04-4d01-a3d7-834d079706ef
+		sourceLineageTag: LoanID
+		summarizeBy: none
+		sourceColumn: LoanID
+
+		annotation SummarizationSetBy = Automatic
+
+	column CollateralID
+		dataType: string
+		lineageTag: a4557aa8-decd-4772-a996-0347dfa4a93d
+		sourceLineageTag: CollateralID
+		summarizeBy: none
+		sourceColumn: CollateralID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientID
+		dataType: string
+		lineageTag: 8d0dadb7-fe01-4f14-9557-4784772909ab
+		sourceLineageTag: ClientID
+		summarizeBy: none
+		sourceColumn: ClientID
+
+		annotation SummarizationSetBy = Automatic
+
+	column AssignedOfficerID
+		dataType: string
+		lineageTag: cb6f5de2-6f19-49d3-ad1f-95e83a62ccb1
+		sourceLineageTag: AssignedOfficerID
+		summarizeBy: none
+		sourceColumn: AssignedOfficerID
+
+		annotation SummarizationSetBy = Automatic
+
+	column ResolvedOutstandingBalance
+		dataType: double
+		lineageTag: d16baf8b-3c2f-489c-b3ed-afc687d36eda
+		sourceLineageTag: ResolvedOutstandingBalance
+		summarizeBy: sum
+		sourceColumn: ResolvedOutstandingBalance
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column BalanceSource
+		dataType: string
+		lineageTag: b16cfa1b-6729-4dd7-a924-6738f0cca16a
+		sourceLineageTag: BalanceSource
+		summarizeBy: none
+		sourceColumn: BalanceSource
+
+		annotation SummarizationSetBy = Automatic
+
+	column TickerSymbol
+		dataType: string
+		lineageTag: 64e39eff-c966-4bfc-84bd-4ddb2b356e88
+		sourceLineageTag: TickerSymbol
+		summarizeBy: none
+		sourceColumn: TickerSymbol
+
+		annotation SummarizationSetBy = Automatic
+
+	column QuantityHeld
+		dataType: decimal
+		formatString: \$#,0.###############;(\$#,0.###############);\$#,0.###############
+		lineageTag: f74dff39-8aa7-4969-be70-642bfd6f768b
+		sourceLineageTag: QuantityHeld
+		summarizeBy: sum
+		sourceColumn: QuantityHeld
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"currencyCulture":"en-US"}
+
+	column CurrentMarketPrice
+		dataType: double
+		lineageTag: 4dd1c207-40a9-42a5-9edf-bcf2f529d05a
+		sourceLineageTag: CurrentMarketPrice
+		summarizeBy: sum
+		sourceColumn: CurrentMarketPrice
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column CurrentCollateralValue
+		dataType: double
+		lineageTag: 0218963f-0ec5-440d-8cfd-a637646e363b
+		sourceLineageTag: CurrentCollateralValue
+		summarizeBy: sum
+		sourceColumn: CurrentCollateralValue
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column DataFreshnessStatus
+		dataType: string
+		lineageTag: b1209190-d68a-48ad-8c51-b04c6cf0a29f
+		sourceLineageTag: DataFreshnessStatus
+		summarizeBy: none
+		sourceColumn: DataFreshnessStatus
+
+		annotation SummarizationSetBy = Automatic
+
+	column EligibleForLTV
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: bf67a42e-5f66-4d35-b09b-ab0daffc352c
+		sourceLineageTag: EligibleForLTV
+		summarizeBy: none
+		sourceColumn: EligibleForLTV
+
+		annotation SummarizationSetBy = Automatic
+
+	column TotalOutstandingBalance
+		dataType: double
+		lineageTag: 2200ca0a-9685-465e-82e6-0caadc9f89d0
+		sourceLineageTag: TotalOutstandingBalance
+		summarizeBy: sum
+		sourceColumn: TotalOutstandingBalance
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column TotalCollateralValue
+		dataType: double
+		lineageTag: 07d677cc-b3a8-4d3e-8e23-33bee6559689
+		sourceLineageTag: TotalCollateralValue
+		summarizeBy: sum
+		sourceColumn: TotalCollateralValue
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column TotalCollateralPositions
+		dataType: int64
+		formatString: 0
+		lineageTag: 22635208-912f-4abf-af16-3569830bee33
+		sourceLineageTag: TotalCollateralPositions
+		summarizeBy: sum
+		sourceColumn: TotalCollateralPositions
+
+		annotation SummarizationSetBy = Automatic
+
+	column IneligiblePositions
+		dataType: int64
+		formatString: 0
+		lineageTag: d20a0e64-d8fb-45ae-8fef-589f426cc369
+		sourceLineageTag: IneligiblePositions
+		summarizeBy: sum
+		sourceColumn: IneligiblePositions
+
+		annotation SummarizationSetBy = Automatic
+
+	column LTV_Ratio
+		dataType: double
+		lineageTag: d5cb761b-2f52-4a2e-a594-c48b315b0ed1
+		sourceLineageTag: LTV_Ratio
+		summarizeBy: sum
+		sourceColumn: LTV_Ratio
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column LTV_Percentage
+		dataType: double
+		lineageTag: db31786f-2a4c-4ecc-af0b-54f40f2ccf81
+		sourceLineageTag: LTV_Percentage
+		summarizeBy: sum
+		sourceColumn: LTV_Percentage
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column LTV_Calculation_Status
+		dataType: string
+		lineageTag: 7f08fb6a-3144-4ea3-86ea-381d4570f2d0
+		sourceLineageTag: LTV_Calculation_Status
+		summarizeBy: none
+		sourceColumn: LTV_Calculation_Status
+
+		annotation SummarizationSetBy = Automatic
+
+	column RiskFlag
+		dataType: string
+		lineageTag: a97d2c40-49e0-46a3-a7e7-cf060b576972
+		sourceLineageTag: RiskFlag
+		summarizeBy: none
+		sourceColumn: RiskFlag
+
+		annotation SummarizationSetBy = Automatic
+
+	column ImmediateActionRequired
+		dataType: boolean
+		formatString: """TRUE"";""TRUE"";""FALSE"""
+		lineageTag: 6a477b7a-99d8-491c-8261-bb7fd44d25c4
+		sourceLineageTag: ImmediateActionRequired
+		summarizeBy: none
+		sourceColumn: ImmediateActionRequired
+
+		annotation SummarizationSetBy = Automatic
+
+	column RequiredCollateralValue
+		dataType: double
+		lineageTag: 94ad5091-c52f-48f0-b6a9-45266b8c6e3d
+		sourceLineageTag: RequiredCollateralValue
+		summarizeBy: sum
+		sourceColumn: RequiredCollateralValue
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column CollateralCoverageShortfall
+		dataType: double
+		lineageTag: 31700cf7-abe0-4723-9d5f-ca3b8b471bf3
+		sourceLineageTag: CollateralCoverageShortfall
+		summarizeBy: sum
+		sourceColumn: CollateralCoverageShortfall
+
+		annotation SummarizationSetBy = Automatic
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
+	column PipelineRunDate
+		dataType: dateTime
+		formatString: General Date
+		lineageTag: 9948dca0-dcf4-4a09-9429-49d1953f22e9
+		sourceLineageTag: PipelineRunDate
+		summarizeBy: none
+		sourceColumn: PipelineRunDate
+
+		annotation SummarizationSetBy = Automatic
+
+	column gold_run_id
+		dataType: string
+		lineageTag: 079835a7-8a16-49e1-970e-08970d810825
+		sourceLineageTag: gold_run_id
+		summarizeBy: none
+		sourceColumn: gold_run_id
+
+		annotation SummarizationSetBy = Automatic
+
+	column DebtorSurrogateKey
+		dataType: string
+		lineageTag: 274ebbfe-9e2f-4ab2-8056-1f3b407656b4
+		sourceLineageTag: DebtorSurrogateKey
+		summarizeBy: none
+		sourceColumn: DebtorSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column LoanSurrogateKey
+		dataType: string
+		lineageTag: 6d6857a7-dcb0-46fb-9228-80f04864ea71
+		sourceLineageTag: LoanSurrogateKey
+		summarizeBy: none
+		sourceColumn: LoanSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column CollateralSurrogateKey
+		dataType: string
+		lineageTag: ad0483bc-7004-4231-986c-22ef8176547b
+		sourceLineageTag: CollateralSurrogateKey
+		summarizeBy: none
+		sourceColumn: CollateralSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column OfficerSurrogateKey
+		dataType: string
+		lineageTag: 69966643-c21a-4f51-825c-0d27f0d1899e
+		sourceLineageTag: OfficerSurrogateKey
+		summarizeBy: none
+		sourceColumn: OfficerSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	column ClientSurrogateKey
+		dataType: string
+		lineageTag: 3742a71f-a9bc-408c-895c-9d877a38abd7
+		sourceLineageTag: ClientSurrogateKey
+		summarizeBy: none
+		sourceColumn: ClientSurrogateKey
+
+		annotation SummarizationSetBy = Automatic
+
+	partition fact_ltv_daily_snapshot = entity
+		mode: directLake
+		source
+			entityName: fact_ltv_daily_snapshot
+			schemaName: dbo
+			expressionSource: 'DirectLake - CSL_Collateral_Risk_LH'
+
