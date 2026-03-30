@@ -130,6 +130,19 @@ table _Measures
 		formatString: 0
 		lineageTag: 33167f78-436e-4bd5-a554-9293d9e69db3
 
+	measure 'Average LTV Ratio Trend' =
+			
+			AVERAGEX(
+			    FILTER(
+			        fact_ltv_daily_snapshot,
+			        NOT ISBLANK(fact_ltv_daily_snapshot[LTV_Ratio])
+			    ),
+			    fact_ltv_daily_snapshot[LTV_Ratio]
+			)
+		lineageTag: 706cfd9f-12a2-432e-9cbb-7bd456a856fd
+
+		annotation PBI_FormatHint = {"isGeneralNumber":true}
+
 	column Value
 		formatString: 0
 		lineageTag: 52ac05ff-ad5f-4907-ac4c-57e8217406e4

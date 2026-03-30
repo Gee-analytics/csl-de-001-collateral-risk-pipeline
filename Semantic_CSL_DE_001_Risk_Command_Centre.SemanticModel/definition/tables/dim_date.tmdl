@@ -1,6 +1,7 @@
 table dim_date
 	lineageTag: 02515484-4610-456f-9a6e-bb0b4c865fac
 	sourceLineageTag: [dbo].[dim_date]
+	dataCategory: Time
 
 	column DateKey
 		dataType: int64
@@ -14,13 +15,20 @@ table dim_date
 
 	column CalendarDate
 		dataType: dateTime
-		formatString: General Date
+		isKey
+		formatString: Long Date
 		lineageTag: 1a666274-6bb9-4cb1-966f-b8feddfa2f63
 		sourceLineageTag: CalendarDate
 		summarizeBy: none
 		sourceColumn: CalendarDate
 
+		changedProperty = DataType
+
+		changedProperty = IsHidden
+
 		annotation SummarizationSetBy = Automatic
+
+		annotation UnderlyingDateTimeDataType = Date
 
 	column DayOfMonth
 		dataType: int64
@@ -138,6 +146,13 @@ table dim_date
 		sourceColumn: IsMarketDay
 
 		annotation SummarizationSetBy = Automatic
+
+	hierarchy 'CalendarDate Hierarchy'
+		lineageTag: 7cb364ed-3d8b-4db2-9261-7c1ce41eb105
+
+		level CalendarDate
+			lineageTag: a5972031-3374-43be-a0e9-dd43ccac3bf0
+			column: CalendarDate
 
 	partition dim_date = entity
 		mode: directLake
