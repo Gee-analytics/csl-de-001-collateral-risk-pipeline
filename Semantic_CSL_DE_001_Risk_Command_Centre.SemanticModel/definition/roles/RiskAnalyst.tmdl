@@ -1,0 +1,5 @@
+role RiskAnalyst
+	modelPermission: read
+
+	annotation PBI_Id = ae16bd16805f4846af53051a9b704f3a
+

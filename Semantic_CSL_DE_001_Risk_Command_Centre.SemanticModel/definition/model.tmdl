@@ -22,3 +22,7 @@ ref table dim_loan
 ref table dim_collateral_asset
 ref table _Measures
 
+ref role Admin
+ref role RiskAnalyst
+ref role CollectionsOfficer
+

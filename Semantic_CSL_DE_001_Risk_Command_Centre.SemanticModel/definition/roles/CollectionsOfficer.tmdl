@@ -1,0 +1,7 @@
+role CollectionsOfficer
+	modelPermission: read
+
+	tablePermission dim_collections_officer = [OfficerEmail] = USERPRINCIPALNAME()
+
+	annotation PBI_Id = 821d0e13839b43c3a94f7c1bd2424c78
+
