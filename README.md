@@ -73,16 +73,26 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
   Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
 
 
+### Data Governance & Security
 
-### Data Governance
+| Requirement | Implementation | Status |
+|---|---|---|
+| PII Protection | SHA-256 hashing of NationalID at Silver layer | Complete |
+| Row Level Security | Power BI semantic model RLS via USERPRINCIPALNAME() filtering on dim_collections_officer | Complete |
+| Object Level Security | Designed for PII columns in dim_debtor via XMLA endpoint and Tabular Editor | Deferred - see note below |
+| OneLake Storage Security | Designed for storage level column restriction across all Fabric engines via OneLake data access roles | Deferred - see note below |
+| Access Control | Microsoft Fabric workspace roles | Complete |
+| Audit Trail | gold_audit_log table capturing every pipeline step per run | Complete |
 
-| Requirement | Implementation |
-| :--- | :--- |
-| PII Protection | SHA-256 hashing of phone, email, and address at Silver layer |
-| Row Level Security | Power BI RLS via officer_client_mapping table |
-| Access Control | Microsoft Fabric workspace roles |
-| Audit Trail | Pipeline run metadata table |
-| Data Lineage | Documented from source to Gold layer |
+### Security Implementation Note
+
+Two security features were designed but not implemented due to Fabric free trial environment constraints:
+
+**Object Level Security (OLS):** Implementation requires XMLA endpoint access via Tabular Editor. XMLA endpoint is not available on Fabric free trial accounts. In a production environment OLS would be configured on PhoneNumber, EmailAddress, and ResidentialAddress columns in dim_debtor, restricting visibility to CollectionsOfficer and Admin roles only.
+
+**OneLake Data Access Roles:** Implementation requires Microsoft Entra ID organisational credentials. Personal Microsoft accounts on Fabric free trial do not support this feature. In a production environment OneLake data access roles would enforce column level restrictions at the storage layer, applying across all Fabric engines including Spark, the SQL Analytics Endpoint, and Power BI. This provides a stronger security posture than semantic model level OLS alone because it cannot be bypassed by querying through an alternative engine.
+
+The security architecture is fully designed and documented. RLS is implemented and tested. Both deferred features would be prioritised in a production deployment.
 
 
 ### Pipeline Orchestration
@@ -124,6 +134,21 @@ NGX-listed securities on Yahoo Finance have inconsistent data coverage and frequ
 ### Project Context
 
 This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage.
+
+## Known Limitations and Technical Debt
+
+The following items were designed and documented but not fully implemented 
+due to Fabric free trial environment constraints or scope decisions. 
+Each has a defined remediation path for a production deployment.
+
+| Item | Severity | Reason | Remediation |
+|---|---|---|---|
+| Stream A watermark implementation | MEDIUM | Deferred due to Fabric trial time constraints. SQL Server ingestion currently uses full load pattern. | Implement Max date watermark logic on Stream A to reduce pipeline runtime and compute cost in production |
+| View 4 Collateral Value Trend | LOW | Requires minimum 5 daily LTV snapshots to render a meaningful trend line. Deferred pending data accumulation. | Build once sufficient daily snapshots are available. Pipeline is running daily and accumulating data automatically |
+| BTC-USD weekend price gaps | MEDIUM | yfinance returns NULL ClosePrice for BTC-USD on weekend dates. 17 records flagged as MISSING and excluded from LTV. | Source weekend crypto prices from Coinbase or Binance API in production |
+| Public holidays not modelled in dim_date | LOW | Licensed holiday calendar required for accurate IsMarketDay classification. | Integrate a licensed public holiday calendar in production |
+
+
 
 
 ***(CSL-DE-001 | Data Engineering Division | March 2026)***
