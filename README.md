@@ -94,9 +94,10 @@ No data import. Always reflects the latest pipeline output.
 **View 1: Portfolio LTV Summary**
 ![Dashboard Portfolio LTV Summary](docs/screenshots/report-portfolio-LTV-summary.png)
 
-Three RLS roles implemented: CollectionsOfficer, RiskAnalyst, Admin. 
-Officers see only debtors assigned to their portfolios via 
-USERPRINCIPALNAME() filtering on dim_collections_officer.
+**Semantic Model**
+![Semantic Model](docs/screenshots/Semantic-model-screenshot.png)
+
+Three RLS roles implemented: CollectionsOfficer, RiskAnalyst, Admin.  Officers see only debtors assigned to their portfolios via USERPRINCIPALNAME() filtering on dim_collections_officer.
 
 
 
