@@ -496,35 +496,17 @@ df_dim_collections_officer = df_officer_joined.select(
     F.lit(RUN_ID).alias("gold_run_id")
 )
 
-# --- 4.4 Apply SCD Type 2 merge into dim_collections_officer ---
-# Check if dim_collections_officer already exists in the metastore.
-# First run: write directly using saveAsTable.
-# Subsequent runs: use DeltaTable merge to insert new versions and close
-# out expired versions without touching unchanged records.
-
-if not spark.catalog.tableExists(GOLD_DIM_COLLECTIONS_OFFICER):
-
-    # First run - table does not exist yet. Write directly.
-    df_dim_collections_officer.write \
-        .format("delta") \
-        .mode("overwrite") \
-        .saveAsTable(GOLD_DIM_COLLECTIONS_OFFICER)
-    print("dim_collections_officer created on first run.")
-
-else:
-    # Subsequent runs - table exists. Apply SCD Type 2 merge.
-    # Match on OfficerSurrogateKey which is deterministic and unique per version.
-    # WHEN MATCHED AND data has changed: update the existing record.
-    # WHEN NOT MATCHED: insert the new version as a new row.
-    delta_table = DeltaTable.forName(spark, GOLD_DIM_COLLECTIONS_OFFICER)
-
-    delta_table.alias("target").merge(
-        df_dim_collections_officer.alias("source"),
-        "target.OfficerSurrogateKey = source.OfficerSurrogateKey"
-    ).whenMatchedUpdateAll() \
-     .whenNotMatchedInsertAll() \
-     .execute()
-    print("dim_collections_officer updated via SCD Type 2 merge.")
+# --- 4.4 Write dim_collections_officer - full overwrite ---
+# Full overwrite is correct here because Silver already maintains SCD Type 2
+# version history. Gold promotes Silver's versioned data cleanly on every run.
+# Merge-based SCD Type 2 at Gold is redundant and causes duplication when
+# EffectiveStartDate changes between runs generating new surrogate keys.
+df_dim_collections_officer.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(GOLD_DIM_COLLECTIONS_OFFICER)
+print("dim_collections_officer written.")
 
 # --- 4.5 Print confirmation ---
 row_count = spark.table(GOLD_DIM_COLLECTIONS_OFFICER).count()
@@ -689,25 +671,17 @@ df_dim_debtor = df_debtor_deduped.select(
     F.lit(RUN_ID).alias("gold_run_id")
 )
 
-# --- 6.4 Apply SCD Type 2 merge into dim_debtor ---
-# First run: write directly using saveAsTable.
-# Subsequent runs: merge on DebtorSurrogateKey to insert new versions
-# and update existing records where attributes have changed.
-if not spark.catalog.tableExists(GOLD_DIM_DEBTOR):
-    df_dim_debtor.write \
-        .format("delta") \
-        .mode("overwrite") \
-        .saveAsTable(GOLD_DIM_DEBTOR)
-    print("dim_debtor created on first run.")
-else:
-    delta_table = DeltaTable.forName(spark, GOLD_DIM_DEBTOR)
-    delta_table.alias("target").merge(
-        df_dim_debtor.alias("source"),
-        "target.DebtorSurrogateKey = source.DebtorSurrogateKey"
-    ).whenMatchedUpdateAll() \
-     .whenNotMatchedInsertAll() \
-     .execute()
-    print("dim_debtor updated via SCD Type 2 merge.")
+# --- 6.4 Write dim_debtor - full overwrite ---
+# Full overwrite is correct here because Silver already maintains SCD Type 2
+# version history. Gold promotes Silver's versioned data cleanly on every run.
+# Merge-based SCD Type 2 at Gold is redundant and causes duplication when
+# EffectiveStartDate changes between runs generating new surrogate keys.
+df_dim_debtor.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(GOLD_DIM_DEBTOR)
+print("dim_debtor written.")
 
 # --- 6.5 Print confirmation ---
 row_count = spark.table(GOLD_DIM_DEBTOR).count()
@@ -801,25 +775,17 @@ df_dim_loan = df_loan_deduped.select(
     F.lit(RUN_ID).alias("gold_run_id")
 )
 
-# --- 7.4 Apply SCD Type 2 merge into dim_loan ---
-# First run: write directly using saveAsTable.
-# Subsequent runs: merge on LoanSurrogateKey to insert new loan versions
-# and update existing records where LoanStatus or other attributes change.
-if not spark.catalog.tableExists(GOLD_DIM_LOAN):
-    df_dim_loan.write \
-        .format("delta") \
-        .mode("overwrite") \
-        .saveAsTable(GOLD_DIM_LOAN)
-    print("dim_loan created on first run.")
-else:
-    delta_table = DeltaTable.forName(spark, GOLD_DIM_LOAN)
-    delta_table.alias("target").merge(
-        df_dim_loan.alias("source"),
-        "target.LoanSurrogateKey = source.LoanSurrogateKey"
-    ).whenMatchedUpdateAll() \
-     .whenNotMatchedInsertAll() \
-     .execute()
-    print("dim_loan updated via SCD Type 2 merge.")
+# --- 7.4 Write dim_loan - full overwrite ---
+# Full overwrite is correct here because Silver already maintains SCD Type 2
+# version history. Gold promotes Silver's versioned data cleanly on every run.
+# Merge-based SCD Type 2 at Gold is redundant and causes duplication when
+# EffectiveStartDate changes between runs generating new surrogate keys.
+df_dim_loan.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(GOLD_DIM_LOAN)
+print("dim_loan written.")
 
 # --- 7.5 Print confirmation ---
 row_count = spark.table(GOLD_DIM_LOAN).count()
@@ -900,22 +866,17 @@ df_dim_collateral_asset = df_collateral_deduped.select(
     F.lit(RUN_ID).alias("gold_run_id")
 )
 
-# --- 8.4 Apply SCD Type 2 merge into dim_collateral_asset ---
-if not spark.catalog.tableExists(GOLD_DIM_COLLATERAL_ASSET):
-    df_dim_collateral_asset.write \
-        .format("delta") \
-        .mode("overwrite") \
-        .saveAsTable(GOLD_DIM_COLLATERAL_ASSET)
-    print("dim_collateral_asset created on first run.")
-else:
-    delta_table = DeltaTable.forName(spark, GOLD_DIM_COLLATERAL_ASSET)
-    delta_table.alias("target").merge(
-        df_dim_collateral_asset.alias("source"),
-        "target.CollateralSurrogateKey = source.CollateralSurrogateKey"
-    ).whenMatchedUpdateAll() \
-     .whenNotMatchedInsertAll() \
-     .execute()
-    print("dim_collateral_asset updated via SCD Type 2 merge.")
+# --- 8.4 Write dim_collateral_asset - full overwrite ---
+# Full overwrite is correct here because Silver already maintains SCD Type 2
+# version history. Gold promotes Silver's versioned data cleanly on every run.
+# Merge-based SCD Type 2 at Gold is redundant and causes duplication when
+# EffectiveStartDate changes between runs generating new surrogate keys.
+df_dim_collateral_asset.write \
+    .format("delta") \
+    .mode("overwrite") \
+    .option("overwriteSchema", "true") \
+    .saveAsTable(GOLD_DIM_COLLATERAL_ASSET)
+print("dim_collateral_asset written.")
 
 # --- 8.5 Print confirmation ---
 row_count = spark.table(GOLD_DIM_COLLATERAL_ASSET).count()
@@ -1347,9 +1308,12 @@ df_fact_prep.groupBy("LTV_Calculation_Status").count().show()
 # =============================================================================
 
 # --- 11.1 Load current dimension keys for validation ---
-# We extract only the key columns from each dimension table.
-# These are used as lookup sets to validate foreign keys in the fact records.
-# Using distinct() ensures duplicate keys do not cause false join inflation.
+# Extract only the key columns from each dimension table.
+# Using distinct() on the key column only ensures one row per key value.
+# officer_keys deduplicates on AssignedOfficerID only because
+# dim_collections_officer has multiple rows per OfficerID due to
+# multiple client assignments. Joining without deduplication fans out
+# the fact rows producing duplicate records in df_fact_clean.
 
 debtor_keys = spark.table(GOLD_DIM_DEBTOR) \
     .select("DebtorID").distinct()
@@ -1360,8 +1324,12 @@ loan_keys = spark.table(GOLD_DIM_LOAN) \
 collateral_keys = spark.table(GOLD_DIM_COLLATERAL_ASSET) \
     .select("CollateralID").distinct()
 
+# CRITICAL: select OfficerID only then distinct to get one row per officer.
+# Do NOT select additional columns before distinct or multiple client
+# assignment rows will survive and fan out the join.
 officer_keys = spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
-    .select(F.col("OfficerID").alias("AssignedOfficerID")).distinct()
+    .select(F.col("OfficerID").alias("AssignedOfficerID")) \
+    .distinct()
 
 client_keys = spark.table(GOLD_DIM_CLIENT_BANK) \
     .select("ClientID").distinct()
@@ -1370,83 +1338,58 @@ date_keys = spark.table(GOLD_DIM_DATE) \
     .select("DateKey").distinct()
 
 # --- 11.2 Validate DebtorID exists in dim_debtor ---
-df_fact_prep = df_fact_prep.withColumn(
-    "debtor_fk_valid",
-    F.col("DebtorID").isNotNull()
-)
-
 df_debtor_valid = df_fact_prep.join(
-    debtor_keys,
-    on="DebtorID",
-    how="left_anti"
+    debtor_keys, on="DebtorID", how="left_anti"
 ).select("DebtorID").distinct()
-
 debtor_orphans = df_debtor_valid.count()
-print(f"DebtorID orphans (not in dim_debtor)     : {debtor_orphans}")
+print(f"DebtorID orphans (not in dim_debtor)              : {debtor_orphans}")
 
 # --- 11.3 Validate LoanID exists in dim_loan ---
 df_loan_valid = df_fact_prep.join(
-    loan_keys,
-    on="LoanID",
-    how="left_anti"
+    loan_keys, on="LoanID", how="left_anti"
 ).select("LoanID").distinct()
-
 loan_orphans = df_loan_valid.count()
-print(f"LoanID orphans (not in dim_loan)         : {loan_orphans}")
+print(f"LoanID orphans (not in dim_loan)                  : {loan_orphans}")
 
 # --- 11.4 Validate CollateralID exists in dim_collateral_asset ---
 df_collateral_valid = df_fact_prep.join(
-    collateral_keys,
-    on="CollateralID",
-    how="left_anti"
+    collateral_keys, on="CollateralID", how="left_anti"
 ).select("CollateralID").distinct()
-
 collateral_orphans = df_collateral_valid.count()
 print(f"CollateralID orphans (not in dim_collateral_asset): {collateral_orphans}")
 
 # --- 11.5 Validate AssignedOfficerID exists in dim_collections_officer ---
 df_officer_valid = df_fact_prep.join(
-    officer_keys,
-    on="AssignedOfficerID",
-    how="left_anti"
+    officer_keys, on="AssignedOfficerID", how="left_anti"
 ).select("AssignedOfficerID").distinct()
-
 officer_orphans = df_officer_valid.count()
 print(f"OfficerID orphans (not in dim_collections_officer): {officer_orphans}")
 
 # --- 11.6 Validate ClientID exists in dim_client_bank ---
 df_client_valid = df_fact_prep.join(
-    client_keys,
-    on="ClientID",
-    how="left_anti"
+    client_keys, on="ClientID", how="left_anti"
 ).select("ClientID").distinct()
-
 client_orphans = df_client_valid.count()
-print(f"ClientID orphans (not in dim_client_bank): {client_orphans}")
+print(f"ClientID orphans (not in dim_client_bank)         : {client_orphans}")
 
 # --- 11.7 Validate DateKey exists in dim_date ---
 df_date_valid = df_fact_prep.join(
-    date_keys,
-    on="DateKey",
-    how="left_anti"
+    date_keys, on="DateKey", how="left_anti"
 ).select("DateKey").distinct()
-
 date_orphans = df_date_valid.count()
-print(f"DateKey orphans (not in dim_date)        : {date_orphans}")
+print(f"DateKey orphans (not in dim_date)                 : {date_orphans}")
 
 # --- 11.8 Split into clean and quarantine sets ---
-# A record is quarantined if ANY of its foreign keys fail validation.
-# left_anti join returns rows in the left DataFrame that have no match
-# in the right DataFrame. We use this to identify orphaned records.
-# Clean records pass all 6 foreign key checks.
-
+# Build df_fact_clean by inner joining to each dimension key set.
+# officer_keys is already deduplicated to one row per AssignedOfficerID
+# so this join produces exactly one matched row per fact record.
 df_fact_clean = df_fact_prep \
-    .join(debtor_keys, on="DebtorID", how="inner") \
-    .join(loan_keys, on="LoanID", how="inner") \
-    .join(collateral_keys, on="CollateralID", how="inner") \
-    .join(officer_keys, on="AssignedOfficerID", how="inner") \
-    .join(client_keys, on="ClientID", how="inner") \
-    .join(date_keys, on="DateKey", how="inner")
+    .join(debtor_keys,     on="DebtorID",         how="inner") \
+    .join(loan_keys,       on="LoanID",            how="inner") \
+    .join(collateral_keys, on="CollateralID",      how="inner") \
+    .join(officer_keys,    on="AssignedOfficerID", how="inner") \
+    .join(client_keys,     on="ClientID",          how="inner") \
+    .join(date_keys,       on="DateKey",           how="inner")
 
 df_fact_quarantine = df_fact_prep \
     .join(debtor_keys, on="DebtorID", how="left_anti") \
@@ -1481,7 +1424,7 @@ if quarantine_count > 0:
     print("Quarantined records will be written to fact_ltv_quarantine_log.")
 else:
     print("\nAll records passed referential integrity validation.")
-    print("Ready to proceed to Section 12: Write to fact_ltv_daily_snapshot.")
+    print("Ready to proceed to Section 11a: Resolve surrogate keys.")
 
 # METADATA ********************
 
@@ -1543,15 +1486,29 @@ df_fact_clean = df_fact_clean.join(
 )
 
 # --- 11a.4 Resolve OfficerSurrogateKey from dim_collections_officer ---
-df_officer_keys = spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
+# CRITICAL: Deduplicate on OfficerID using row_number before joining.
+# One officer has multiple rows in dim_collections_officer due to multiple
+# client assignments each carrying a different OfficerSurrogateKey.
+# Selecting OfficerID + OfficerSurrogateKey then distinct() keeps all rows
+# because each surrogate key is different. This fans out the join.
+# Fix: take one row per OfficerID using row_number ordered by EffectiveStartDate
+# descending to get the most recent assignment's surrogate key.
+df_officer_sk = spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
     .filter(F.col("IsCurrent") == True) \
+    .withColumn(
+        "row_num",
+        F.row_number().over(
+            Window.partitionBy("OfficerID")
+                  .orderBy(F.col("EffectiveStartDate").desc())
+        )
+    ).filter(F.col("row_num") == 1) \
     .select(
         F.col("OfficerID").alias("AssignedOfficerID"),
         F.col("OfficerSurrogateKey")
-    ).distinct()
+    )
 
 df_fact_clean = df_fact_clean.join(
-    df_officer_keys,
+    df_officer_sk,
     on="AssignedOfficerID",
     how="left"
 )
@@ -2047,6 +2004,210 @@ else:
 # --- 14.6 Print confirmation ---
 total = spark.table(GOLD_FACT_MARKET_PRICES).count()
 print(f"\nfact_market_prices_daily total rows: {total}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+# Check for duplicate IsCurrent = True rows in each dimension
+print("dim_debtor duplicates on DebtorID where IsCurrent = True:")
+spark.table(GOLD_DIM_DEBTOR).filter(F.col("IsCurrent") == True) \
+    .groupBy("DebtorID").count().filter(F.col("count") > 1).show()
+
+print("dim_loan duplicates on LoanID where IsCurrent = True:")
+spark.table(GOLD_DIM_LOAN).filter(F.col("IsCurrent") == True) \
+    .groupBy("LoanID").count().filter(F.col("count") > 1).show()
+
+print("dim_collateral_asset duplicates on CollateralID where IsCurrent = True:")
+spark.table(GOLD_DIM_COLLATERAL_ASSET).filter(F.col("IsCurrent") == True) \
+    .groupBy("CollateralID").count().filter(F.col("count") > 1).show()
+
+print("dim_collections_officer duplicates on OfficerID where IsCurrent = True:")
+spark.table(GOLD_DIM_COLLECTIONS_OFFICER).filter(F.col("IsCurrent") == True) \
+    .groupBy("OfficerID").count().filter(F.col("count") > 1).show()
+
+print("dim_client_bank duplicates on ClientID:")
+spark.table(GOLD_DIM_CLIENT_BANK) \
+    .groupBy("ClientID").count().filter(F.col("count") > 1).show()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+spark.table(GOLD_DIM_DEBTOR) \
+    .filter(
+        (F.col("DebtorID") == "DBT-0058") &
+        (F.col("IsCurrent") == True)
+    ) \
+    .select(
+        "DebtorID",
+        "DebtorSurrogateKey",
+        "EffectiveStartDate",
+        "EffectiveEndDate",
+        "IsCurrent",
+        "gold_load_date"
+    ).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+spark.table(GOLD_DIM_DEBTOR) \
+    .filter(F.col("DebtorID") == "DBT-0058") \
+    .select(
+        "DebtorID",
+        "DebtorSurrogateKey",
+        "EffectiveStartDate",
+        "EffectiveEndDate",
+        "IsCurrent",
+        "gold_load_date"
+    ).show(truncate=False)
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+print("dim_debtor duplicates:")
+spark.table(GOLD_DIM_DEBTOR) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("DebtorID").count() \
+    .filter(F.col("count") > 1).count()
+
+print("dim_collections_officer duplicates:")
+spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("OfficerID").count() \
+    .filter(F.col("count") > 1).count()
+
+print("dim_loan duplicates:")
+spark.table(GOLD_DIM_LOAN) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("LoanID").count() \
+    .filter(F.col("count") > 1).count()
+
+print("dim_collateral_asset duplicates:")
+spark.table(GOLD_DIM_COLLATERAL_ASSET) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("CollateralID").count() \
+    .filter(F.col("count") > 1).count()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+spark.sql("DROP TABLE IF EXISTS dim_debtor")
+spark.sql("DROP TABLE IF EXISTS dim_loan")
+spark.sql("DROP TABLE IF EXISTS dim_collateral_asset")
+spark.sql("DROP TABLE IF EXISTS dim_collections_officer")
+spark.sql("DROP TABLE IF EXISTS fact_ltv_daily_snapshot")
+print("All tables dropped. Ready for clean rebuild.")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark",
+# META   "frozen": true,
+# META   "editable": false
+# META }
+
+# CELL ********************
+
+print("dim_debtor duplicates:")
+spark.table(GOLD_DIM_DEBTOR) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("DebtorID").count() \
+    .filter(F.col("count") > 1).count()
+
+print("dim_collections_officer duplicates:")
+spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("OfficerID").count() \
+    .filter(F.col("count") > 1).count()
+
+print("dim_loan duplicates:")
+spark.table(GOLD_DIM_LOAN) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("LoanID").count() \
+    .filter(F.col("count") > 1).count()
+
+print("dim_collateral_asset duplicates:")
+spark.table(GOLD_DIM_COLLATERAL_ASSET) \
+    .filter(F.col("IsCurrent") == True) \
+    .groupBy("CollateralID").count() \
+    .filter(F.col("count") > 1).count()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+print(f"df_fact_clean before Section 11a: {df_fact_clean.count()}")
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+spark.table(GOLD_DIM_COLLECTIONS_OFFICER) \
+    .groupBy("OfficerID") \
+    .count() \
+    .filter(F.col("count") > 1) \
+    .count()
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
+print(df_fact_prep.count())
+
+# METADATA ********************
+
+# META {
+# META   "language": "python",
+# META   "language_group": "synapse_pyspark"
+# META }
+
+# CELL ********************
+
 
 # METADATA ********************
 
