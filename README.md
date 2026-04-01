@@ -249,12 +249,13 @@ Query Gold tables directly via the Lakehouse SQL Analytics Endpoint
 or connect Power BI via Direct Lake mode using the semantic model 
 `Semantic_CSL_DE_001_Risk_Command_Centre`.
 
+
+
+
 ## Repository Structure
 
-> Note: Microsoft Fabric's Git integration commits Fabric items 
-> (notebooks, pipelines, environments) directly to the repository root 
-> with their item type appended. This is Fabric's native behaviour 
-> and reflects a workspace-level Git sync rather than a file-level commit.
+> Note: Microsoft Fabric's Git integration commits Fabric items such as: (notebooks, pipelines, environments) directly to the repository root with their item type appended.
+> This is Fabric's native behaviour and reflects a workspace-level Git sync rather than a file-level commit.
 ```
 csl-de-001-collateral-risk-pipeline/
 ├── nb_bronze_market_prices_ingest.Notebook    # Stream C: yfinance API ingestion
@@ -278,29 +279,6 @@ csl-de-001-collateral-risk-pipeline/
 ├── .gitignore
 └── README.md
 ```
-```
-
----
-
-**Step 7: Delete the tests folder**
-
-As you decided. No folder is better than an empty one.
-
----
-
-**Commit message:**
-```
-docs: restructure README for portfolio presentation
-
-- Add Table of Contents for navigation
-- Add technology badges
-- Add Pipeline Results section with live run metrics
-- Add Power BI Risk Command Centre section with dashboard screenshots
-- Add Setup and Exploration section for reproducibility
-- Update Repository Structure to reflect actual Fabric Git integration layout
-- Remove tests folder pending future implementation
-- Fix PII protection description accuracy
-- Move documentation links into structured Documentation section
 
 
 ## Known Limitations and Technical Debt
