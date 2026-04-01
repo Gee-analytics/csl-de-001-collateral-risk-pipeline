@@ -46,9 +46,7 @@ Debtors who pledge volatile assets such as stocks and cryptocurrency as loan col
 This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.
 
 
-<h3>Architecture</h3>
-
-<img width="7951" height="2972" alt="CSL_DE_001_Architecture_HighLevel_v3 0 drawio" src="https://github.com/user-attachments/assets/b75279d1-2285-4054-93ae-c70c5f692176" />
+##Architecture
 
 ![Architecture Diagram - High Level](docs/screenshots/CSL_DE_001_Architecture_HighLevel_v1.0.png)
 
@@ -125,7 +123,7 @@ USERPRINCIPALNAME() filtering on dim_collections_officer.
 | **Cloud/Local** | AWS S3 (Landing Zone), On-Prem SQL Server |
 
 
-### Key Engineering Features
+## Key Engineering Features
 
 * <u>**Hybrid Cloud Connectivity**</u>: <br>
   Secure extraction from an on-premises SQL Server via Microsoft On-Premises Data Gateway without exposing the database to the open internet. Standard enterprise pattern for hybrid architectures.
@@ -152,7 +150,7 @@ NationalID (BVN) is SHA-256 hashed at the Silver layer. This field has no operat
   Every pipeline run logs start time, end time, row counts, and source system to a metadata table, providing a full forensic audit trail of data movement.
 
 
-### Data Governance & Security
+## Data Governance & Security
 
 | Requirement | Implementation | Status |
 |---|---|---|
@@ -163,7 +161,7 @@ NationalID (BVN) is SHA-256 hashed at the Silver layer. This field has no operat
 | Access Control | Microsoft Fabric workspace roles | Complete |
 | Audit Trail | gold_audit_log table capturing every pipeline step per run | Complete |
 
-### Security Implementation Note
+## Security Implementation Note
 
 Two security features were designed but not implemented fully due to Fabric free trial environment constraints:
 
@@ -174,7 +172,7 @@ Two security features were designed but not implemented fully due to Fabric free
 The security architecture is fully designed and documented. RLS is implemented and tested. Both deferred features would be prioritised in a production deployment.
 
 
-### Pipeline Orchestration
+## Pipeline Orchestration
 
 The master Fabric Data Pipeline executes all steps in dependency order daily at market close:
 
@@ -190,7 +188,7 @@ The master Fabric Data Pipeline executes all steps in dependency order daily at 
 Failed steps trigger an email alert to the Data Engineering team. Each step logs to a pipeline metadata table.
 
 
-### LTV Calculation Logic
+## LTV Calculation Logic
 ```
 Total Collateral Value  = SUM(QuantityHeld x CurrentMarketPrice) across all eligible collateral positions per debtor
 Total Outstanding Balance = SUM(CurrentOutstandingBalance) across all active and defaulted loans per debtor
@@ -204,7 +202,7 @@ MEDIUM where 0.60 <= LTV < 0.80, LOW where LTV < 0.60.
 Edge case handling: where no price exists for a ticker on the current date, the most recent available price within the last 5 business days is used. 
 Records with no price within 5 days are flagged as MISSING and excluded from LTV calculation.
 
-### Architecture Decision Notes
+## Architecture Decision Notes
 
 **Lakehouse over Fabric Data Warehouse**: <br>
 A Lakehouse was chosen over a Fabric Data Warehouse because the pipeline is notebook-driven with PySpark, data arrives raw and unstructured at Bronze requiring schema flexibility, and Power BI Direct Lake mode requires Delta tables in a Lakehouse. A Warehouse would be appropriate for a high concurrency SQL analyst workload, which is not the use case here.
