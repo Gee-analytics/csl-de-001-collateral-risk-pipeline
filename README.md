@@ -3,6 +3,9 @@ End-to-end data engineering pipeline on Microsoft Fabric monitoring debtor colla
 
 <h2>CSL-DE-001: Collateral Risk Monitoring & Margin Call Automation Pipeline </h2>
 
+<img width="1852" height="716" alt="pipeline-master-orchestrator" src="https://github.com/user-attachments/assets/91b4c98a-f7a8-40e1-9b09-d82df605f290" />
+
+
 <h3>Overview</h3>
 <p>Collection Solutions Limited (CSL) is a Nigerian debt recovery and financial assurance agency managing delinquent receivables on behalf of multiple client banks. This project implements an automated, end-to-end data engineering pipeline that monitors the market value of debtor pledged collateral against outstanding loan balances in near real-time, triggering margin call alerts before collateral value falls below the debt threshold. <br>
 The pipeline transforms CSL from a reactive collections agency into a proactive, data-driven risk management operation.</p>
@@ -11,11 +14,15 @@ The pipeline transforms CSL from a reactive collections agency into a proactive,
 <p>Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery. <br>
 This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.</p>
 
+
+<img width="1225" height="710" alt="report-portfolio-LTV-summary" src="https://github.com/user-attachments/assets/248ed230-f671-4fdf-9918-ea18f9297ab1" />
+
+
 <h3>Architecture</h3>
+
 <img width="7951" height="2972" alt="CSL_DE_001_Architecture_HighLevel_v3 0 drawio" src="https://github.com/user-attachments/assets/b75279d1-2285-4054-93ae-c70c5f692176" />
 
 [Architecture Diagram - High Level](docs/architecture/CSL_DE_001_Architecture_HighLevel_v1.0.svg)
-
 
 The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ingesting data from three sources into Bronze, transforming and joining in Silver, computing business logic in Gold, and serving a Direct Lake Power BI dashboard.
 
@@ -88,7 +95,7 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 
 ### Security Implementation Note
 
-Two security features were designed but not implemented due to Fabric free trial environment constraints:
+Two security features were designed but not implemented fully due to Fabric free trial environment constraints:
 
 **Object Level Security (OLS):** Implementation requires XMLA endpoint access via Tabular Editor. XMLA endpoint is not available on Fabric free trial accounts. In a production environment OLS would be configured on PhoneNumber, EmailAddress, and ResidentialAddress columns in dim_debtor, restricting visibility to CollectionsOfficer and Admin roles only.
 
