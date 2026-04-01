@@ -16,13 +16,13 @@ The pipeline transforms CSL from a reactive collections agency into a proactive,
 <p>Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery. <br>
 This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.</p>
 
-![Dashboard Portfolio LTV Summary](docs/screenshots/report-portfolio-ltv-summary.png)
+![Dashboard Portfolio LTV Summary](docs/screenshots/report-portfolio-LTV-summary.png)
 
 <h3>Architecture</h3>
 
 <img width="7951" height="2972" alt="CSL_DE_001_Architecture_HighLevel_v3 0 drawio" src="https://github.com/user-attachments/assets/b75279d1-2285-4054-93ae-c70c5f692176" />
 
-[Architecture Diagram - High Level](docs/architecture/CSL_DE_001_Architecture_HighLevel_v1.0.svg)
+![Architecture Diagram - High Level](docs/screenshots/CSL_DE_001_Architecture_HighLevel_v1.0)
 
 The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ingesting data from three sources into Bronze, transforming and joining in Silver, computing business logic in Gold, and serving a Direct Lake Power BI dashboard.
 
