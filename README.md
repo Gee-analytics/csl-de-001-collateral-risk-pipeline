@@ -17,6 +17,7 @@ collateral risk and automating margin call alerts via a daily LTV Risk Command C
 ![Pipeline Master Orchestration](docs/screenshots/pipeline-master-orchestrator.png)
 
 ## Table of Contents
+- [Overview](#Overview)
 - [Business Problem](#business-problem)
 - [Architecture](#architecture)
 - [Power BI Risk Command Centre](#power-bi-risk-command-centre)
@@ -34,13 +35,15 @@ collateral risk and automating margin call alerts via a daily LTV Risk Command C
 - [Project Context](#project-context)
 
 
-<h3>Overview</h3>
-<p>Collection Solutions Limited (CSL) is a Nigerian debt recovery and financial assurance agency managing delinquent receivables on behalf of multiple client banks. This project implements an automated, end-to-end data engineering pipeline that monitors the market value of debtor pledged collateral against outstanding loan balances in near real-time, triggering margin call alerts before collateral value falls below the debt threshold. <br>
-The pipeline transforms CSL from a reactive collections agency into a proactive, data-driven risk management operation.</p>
+## Overview
 
-<h3>Business Problem</h3>
-<p>Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery. <br>
-This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.</p>
+Collection Solutions Limited (CSL) is a Nigerian debt recovery and financial assurance agency managing delinquent receivables on behalf of multiple client banks. This project implements an automated, end-to-end data engineering pipeline that monitors the market value of debtor pledged collateral against outstanding loan balances daily, triggering margin call alerts before collateral value falls below the debt threshold. The pipeline transforms CSL from a reactive collections agency into a proactive, data-driven risk management operation.
+
+## Business Problem
+
+Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery.
+
+This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.
 
 
 <h3>Architecture</h3>
@@ -48,6 +51,16 @@ This pipeline solves that problem by computing Loan-to-Value ratios per debtor d
 <img width="7951" height="2972" alt="CSL_DE_001_Architecture_HighLevel_v3 0 drawio" src="https://github.com/user-attachments/assets/b75279d1-2285-4054-93ae-c70c5f692176" />
 
 ![Architecture Diagram - High Level](docs/screenshots/CSL_DE_001_Architecture_HighLevel_v1.0)
+
+The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ingesting data from three sources into Bronze, transforming and joining in Silver, computing business logic in Gold, and serving a Direct Lake Power BI dashboard.
+
+| Layer | Responsibility |
+| :--- | :--- |
+| **Bronze** | Raw Delta tables. Schema on read. No transformations. |
+| **Silver** | Cleansed, typed, deduplicated, joined, PII masked. |
+| **Gold** | LTV calculations, risk flags, business ready output. |
+
+
 
 ## Pipeline Results
 
@@ -73,6 +86,8 @@ These metrics are from live automated pipeline runs on the synthetic CSL portfol
 > 90% ImmediateActionRequired rate is consistent with a debt recovery portfolio 
 > where CSL manages defaulted and delinquent accounts rather than performing loans.
 
+
+
 ## Power BI Risk Command Centre
 
 The dashboard connects to the Gold layer star schema via Direct Lake mode. 
@@ -87,15 +102,7 @@ USERPRINCIPALNAME() filtering on dim_collections_officer.
 
 
 
-The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ingesting data from three sources into Bronze, transforming and joining in Silver, computing business logic in Gold, and serving a Direct Lake Power BI dashboard.
-
-| Layer | Responsibility |
-| :--- | :--- |
-| **Bronze** | Raw Delta tables. Schema on read. No transformations. |
-| **Silver** | Cleansed, typed, deduplicated, joined, PII masked. |
-| **Gold** | LTV calculations, risk flags, business ready output. |
-
-### Data Sources
+## Data Sources
 
 | Data Source | Technology | Description |
 | :--- | :--- | :--- |
@@ -104,7 +111,7 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 | **Yahoo Finance** | Python (yfinance) | Daily closing prices for AAPL, TSLA, GOOGL, MSFT, AMZN, NVDA, BTC-USD. |
 
 
-### Technical Stack
+## Technical Stack
 
 | Category | Technology |
 | :--- | :--- |
@@ -209,12 +216,96 @@ Eventstream is designed for continuous unbounded event streams. Daily end-of-day
 NGX-listed securities on Yahoo Finance have inconsistent data coverage and frequent gaps. NYSE and NASDAQ tickers provide reliable, consistent daily price data. In a production environment, NGX securities would be handled via a licensed market data feed.
 
 
-### Project Context
+## Setup & Exploration
 
-This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage. The business rules, risk thresholds, and data flow design reflect realistic operational patterns in the Nigerian financial services debt recovery context.
+This project runs on Microsoft Fabric and cannot be executed locally 
+end-to-end. The following components are required to replicate the environment:
+
+**Prerequisites:**
+- Microsoft Fabric workspace with Lakehouse provisioned
+- Microsoft On-Premises Data Gateway installed on a local machine with SQL Server
+- AWS S3 bucket with the folder structure defined in `scripts/s3-simulation/`
+- Python environment with dependencies: pyodbc, pandas, pyarrow, boto3, yfinance
+
+**To generate synthetic source data:**
+```bash
+# Navigate to data-generation folder
+# Run the Jupyter notebook to populate SQL Server tables
+# See data-generation/ folder for the full generation notebook
+```
+
+**To simulate S3 client bank drops:**
+```bash
+# Navigate to scripts/s3-simulation/
+# Run generate_bank_drops.py to generate Parquet files and upload to S3
+python scripts/s3-simulation/generate_bank_drops.py
+```
+
+**To run the full pipeline:**
+Trigger `pl_master_orchestration` in the Microsoft Fabric workspace. 
+The pipeline executes all steps in dependency order: Bronze ingestion, 
+Silver transformation, Gold aggregation, Power BI refresh.
+
+**To explore the Gold layer:**
+Query Gold tables directly via the Lakehouse SQL Analytics Endpoint 
+or connect Power BI via Direct Lake mode using the semantic model 
+`Semantic_CSL_DE_001_Risk_Command_Centre`.
+
+## Repository Structure
+
+> Note: Microsoft Fabric's Git integration commits Fabric items 
+> (notebooks, pipelines, environments) directly to the repository root 
+> with their item type appended. This is Fabric's native behaviour 
+> and reflects a workspace-level Git sync rather than a file-level commit.
+```
+csl-de-001-collateral-risk-pipeline/
+├── nb_bronze_market_prices_ingest.Notebook    # Stream C: yfinance API ingestion
+├── nb_bronze_s3_bank_balance_ingest.Notebook  # Stream B: S3 Parquet ingestion  
+├── nb_setup_pipeline_metadata.Notebook        # Watermark seed notebook
+├── nb_silver_transformation.Notebook          # Silver cleaning and transformation
+├── nb_gold_aggregation.Notebook               # Gold star schema aggregation
+├── pl_bronze_sqlserver_full_load.DataPipeline # Stream A: SQL Server ingestion
+├── pl_master_orchestration.DataPipeline       # Master orchestration pipeline
+├── env_csl_de_001_bronze.Environment          # Managed environment with yfinance
+├── CSL_Collateral_Risk_LH.Lakehouse           # Lakehouse definition
+├── data-generation/                           # Synthetic data generation notebook
+├── scripts/
+│   └── s3-simulation/                         # S3 Parquet file generation scripts
+├── docs/
+│   ├── architecture/                          # Draw.io and SVG architecture diagrams
+│   ├── business-rules/                        # Business Rules Document v1.0
+│   ├── data-dictionary/                       # Gold layer Data Dictionary v1.0
+│   └── gold/                                  # Gold Layer Summary v1.0
+├── config/                                    # Configuration templates
+├── .gitignore
+└── README.md
+```
+```
+
+---
+
+**Step 7: Delete the tests folder**
+
+As you decided. No folder is better than an empty one.
+
+---
+
+**Commit message:**
+```
+docs: restructure README for portfolio presentation
+
+- Add Table of Contents for navigation
+- Add technology badges
+- Add Pipeline Results section with live run metrics
+- Add Power BI Risk Command Centre section with dashboard screenshots
+- Add Setup and Exploration section for reproducibility
+- Update Repository Structure to reflect actual Fabric Git integration layout
+- Remove tests folder pending future implementation
+- Fix PII protection description accuracy
+- Move documentation links into structured Documentation section
 
 
-### Known Limitations and Technical Debt
+## Known Limitations and Technical Debt
 
 The following items were designed and documented but not fully implemented due to Fabric free trial environment constraints or scope decisions. 
 Each has a defined remediation path for a production deployment.
@@ -226,7 +317,7 @@ Each has a defined remediation path for a production deployment.
 | BTC-USD weekend price gaps | MEDIUM | yfinance returns NULL ClosePrice for BTC-USD on weekend dates. 17 records flagged as MISSING and excluded from LTV. | Source weekend crypto prices from Coinbase or Binance API in production |
 | Public holidays not modelled in dim_date | LOW | Licensed holiday calendar required for accurate IsMarketDay classification. | Integrate a licensed public holiday calendar in production |
 
-### Documentation
+## Documentation
 | Document | Description |
 |---|---|
 | [Business Rules Document](docs/business-rules/CSL_DE_001_Business_Rules_v1.0.md) | Defines LTV formula, risk thresholds, balance authority rule, stale price logic, and all business rules implemented in the Gold layer |
@@ -234,5 +325,10 @@ Each has a defined remediation path for a production deployment.
 | [Data Dictionary - Gold Layer](docs/data-dictionary/CSL_DE_001_Data_Dictionary_Gold_v1.0.md) | Column level definitions for all 9 Gold layer tables including data types, nullability, descriptions, and example values |
 | [Architecture Diagram - High Level](docs/architecture/CSL_DE_001_Architecture_HighLevel_v1.0.svg) | End-to-end architecture showing all five zones from data sources to presentation layer |
 | [Architecture Diagram - Ingestion Detail](docs/architecture/CSL_DE_001_Architecture_Ingestion_Detail_v1.0.svg) | Detailed ingestion diagram showing each source connection, tool, and Bronze landing pattern |
+
+
+## Project Context
+
+This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage. The business rules, risk thresholds, and data flow design reflect realistic operational patterns in the Nigerian financial services debt recovery context.
 
 ***(CSL-DE-001 | Data Engineering Division | March 2026)***
