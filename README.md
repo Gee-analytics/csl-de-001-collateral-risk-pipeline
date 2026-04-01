@@ -1,11 +1,35 @@
-<h1> csl-de-001-collateral-risk-pipeline </h1>
-End-to-end data engineering pipeline on Microsoft Fabric monitoring debtor collateral risk and automating margin call alerts via a real-time LTV Risk Command Centre.
+# CSL-DE-001: Collateral Risk Monitoring & Margin Call Automation System
 
-<h2>CSL-DE-001: Collateral Risk Monitoring & Margin Call Automation Pipeline </h2>
+**Collection Solutions Limited | Data Engineering Division | Microsoft Fabric**
 
+End-to-end data engineering pipeline on Microsoft Fabric monitoring debtor 
+collateral risk and automating margin call alerts via a daily LTV Risk Command Centre.
 
+![Microsoft Fabric](https://img.shields.io/badge/Microsoft%20Fabric-0078D4?style=flat&logo=microsoft&logoColor=white)
+![PySpark](https://img.shields.io/badge/PySpark-E25A1C?style=flat&logo=apachespark&logoColor=white)
+![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=flat&logo=powerbi&logoColor=black)
+![Delta Lake](https://img.shields.io/badge/Delta%20Lake-00ADD8?style=flat&logo=delta&logoColor=white)
+![AWS S3](https://img.shields.io/badge/AWS%20S3-FF9900?style=flat&logo=amazons3&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
 
 ![Pipeline Master Orchestration](docs/screenshots/pipeline-master-orchestrator.png)
+
+## Table of Contents
+- [Business Problem](#business-problem)
+- [Architecture](#architecture)
+- [Power BI Risk Command Centre](#power-bi-risk-command-centre)
+- [Pipeline Results](#pipeline-results)
+- [Technical Stack](#technical-stack)
+- [Key Engineering Features](#key-engineering-features)
+- [LTV Calculation Logic](#ltv-calculation-logic)
+- [Pipeline Orchestration](#pipeline-orchestration)
+- [Data Governance & Security](#data-governance--security)
+- [Architecture Decision Notes](#architecture-decision-notes)
+- [Setup & Exploration](#setup--exploration)
+- [Repository Structure](#repository-structure)
+- [Known Limitations and Technical Debt](#known-limitations-and-technical-debt)
+- [Documentation](#documentation)
+- [Project Context](#project-context)
 
 
 <h3>Overview</h3>
