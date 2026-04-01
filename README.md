@@ -3,7 +3,7 @@ End-to-end data engineering pipeline on Microsoft Fabric monitoring debtor colla
 
 <h2>CSL-DE-001: Collateral Risk Monitoring & Margin Call Automation Pipeline </h2>
 
-![Pipeline Master Orchestration](docs/screenshots/pipeline_master_orchestration.png)
+
 
 ![Pipeline Master Orchestration](docs/screenshots/pipeline-master-orchestrator.png)
 
@@ -16,7 +16,7 @@ The pipeline transforms CSL from a reactive collections agency into a proactive,
 <p>Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery. <br>
 This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.</p>
 
-![Dashboard Portfolio LTV Summary](docs/screenshots/dashboard_portfolio_ltv_summary.png)
+![Dashboard Portfolio LTV Summary](docs/screenshots/report-portfolio-ltv-summary.png)
 
 <h3>Architecture</h3>
 
