@@ -7,10 +7,12 @@ collateral risk and automating margin call alerts via a daily LTV Risk Command C
 
 ![Microsoft Fabric](https://img.shields.io/badge/Microsoft%20Fabric-0078D4?style=flat&logo=microsoft&logoColor=white)
 ![PySpark](https://img.shields.io/badge/PySpark-E25A1C?style=flat&logo=apachespark&logoColor=white)
-![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=flat&logo=powerbi&logoColor=black)
 ![Delta Lake](https://img.shields.io/badge/Delta%20Lake-00ADD8?style=flat&logo=delta&logoColor=white)
 ![AWS S3](https://img.shields.io/badge/AWS%20S3-FF9900?style=flat&logo=amazons3&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
+![SQL Server](https://img.shields.io/badge/SQL%20Server-CC2927?style=flat&logo=microsoftsqlserver&logoColor=white)
+![On-Premises Data Gateway](https://img.shields.io/badge/On--Premises%20Gateway-0078D4?style=flat&logo=microsoft&logoColor=white)
+![Power BI](https://img.shields.io/badge/Power%20BI-F2C811?style=flat&logo=powerbi&logoColor=black)
 
 ![Pipeline Master Orchestration](docs/screenshots/pipeline-master-orchestrator.png)
 
@@ -40,13 +42,50 @@ The pipeline transforms CSL from a reactive collections agency into a proactive,
 <p>Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery. <br>
 This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.</p>
 
-![Dashboard Portfolio LTV Summary](docs/screenshots/report-portfolio-LTV-summary.png)
 
 <h3>Architecture</h3>
 
 <img width="7951" height="2972" alt="CSL_DE_001_Architecture_HighLevel_v3 0 drawio" src="https://github.com/user-attachments/assets/b75279d1-2285-4054-93ae-c70c5f692176" />
 
 ![Architecture Diagram - High Level](docs/screenshots/CSL_DE_001_Architecture_HighLevel_v1.0)
+
+## Pipeline Results
+
+These metrics are from live automated pipeline runs on the synthetic CSL portfolio.
+
+| Metric | Value |
+|---|---|
+| Total debtor accounts monitored | 249 per daily snapshot |
+| Accounts flagged ImmediateActionRequired | 225 out of 249 (90%) |
+| CRITICAL risk accounts (LTV >= 1.00) | 221 |
+| HIGH risk accounts (0.80 <= LTV < 1.00) | 4 |
+| Daily pipeline snapshots accumulated | 3 and growing |
+| Referential integrity validation | 0 orphaned records across 6 foreign key checks |
+| Records quarantined due to data quality | 0 fact table quarantines on all runs |
+| Stale price records handled gracefully | 232 records resolved via 5-day lookback |
+| Missing price records flagged and excluded | 17 BTC-USD weekend gap records |
+| Balance authority rule applied | 236 records resolved to S3 source, 13 to on-premises fallback |
+| Total Bronze tables | 8 |
+| Total Silver tables | 5 |
+| Total Gold tables | 9 |
+| Data quality issues handled at Silver | 21 HIGH severity findings across 8 Bronze tables |
+
+> 90% ImmediateActionRequired rate is consistent with a debt recovery portfolio 
+> where CSL manages defaulted and delinquent accounts rather than performing loans.
+
+## Power BI Risk Command Centre
+
+The dashboard connects to the Gold layer star schema via Direct Lake mode. 
+No data import. Always reflects the latest pipeline output.
+
+**View 1: Portfolio LTV Summary**
+![Dashboard Portfolio LTV Summary](docs/screenshots/report-portfolio-LTV-summary.png)
+
+Three RLS roles implemented: CollectionsOfficer, RiskAnalyst, Admin. 
+Officers see only debtors assigned to their portfolios via 
+USERPRINCIPALNAME() filtering on dim_collections_officer.
+
+
 
 The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ingesting data from three sources into Bronze, transforming and joining in Silver, computing business logic in Gold, and serving a Direct Lake Power BI dashboard.
 
