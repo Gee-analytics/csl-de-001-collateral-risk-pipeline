@@ -59,6 +59,9 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 | **Gold** | LTV calculations, risk flags, business ready output. |
 
 
+### Pipeline monitoring:
+![Monitoring Hub](docs/screenshots/csl-collateral-risk-pipeline-monitor.png.png)
+
 
 ## Pipeline Results
 
