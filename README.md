@@ -3,7 +3,7 @@ End-to-end data engineering pipeline on Microsoft Fabric monitoring debtor colla
 
 <h2>CSL-DE-001: Collateral Risk Monitoring & Margin Call Automation Pipeline </h2>
 
-<img width="1852" height="716" alt="pipeline-master-orchestrator" src="https://github.com/user-attachments/assets/91b4c98a-f7a8-40e1-9b09-d82df605f290" />
+![Pipeline Master Orchestration](docs/screenshots/pipeline_master_orchestration.png)
 
 
 <h3>Overview</h3>
@@ -14,9 +14,7 @@ The pipeline transforms CSL from a reactive collections agency into a proactive,
 <p>Debtors who pledge volatile assets such as stocks and cryptocurrency as loan collateral present a significant recovery risk when market values decline. Without automated monitoring, collection actions are triggered reactively after collateral value has already eroded below the outstanding debt threshold, reducing the likelihood of full recovery. <br>
 This pipeline solves that problem by computing Loan-to-Value ratios per debtor daily, flagging high-risk accounts automatically, and surfacing actionable insights through a Power BI Risk Command Centre dashboard.</p>
 
-
-<img width="1225" height="710" alt="report-portfolio-LTV-summary" src="https://github.com/user-attachments/assets/248ed230-f671-4fdf-9918-ea18f9297ab1" />
-
+![Dashboard Portfolio LTV Summary](docs/screenshots/dashboard_portfolio_ltv_summary.png)
 
 <h3>Architecture</h3>
 
@@ -73,7 +71,7 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
   Dirty records are never silently dropped. Every data quality issue is flagged with a specific flag column and an is_eligible_for_ltv boolean controls which records participate in LTV calculation. Bad records are quarantined and visible for investigation - ensuring auditability.
   
 * <u>**PII Protection**</u>: <br>
-  Debtor contact data (phone, email, address) is SHA-256 hashed at the Silver layer before hitting Gold/Presentation.
+NationalID (BVN) is SHA-256 hashed at the Silver layer. This field has no operational purpose in the dashboard and is permanently anonymised. Contact fields including PhoneNumber, EmailAddress, and ResidentialAddress pass through to the Gold layer in readable form and are protected via Row Level Security and Object Level Security at the Power BI semantic model layer. Collections officers require contact details to reach debtors. Irreversible hashing of these fields would destroy operational utility.
   
 * <u>**Row-Level Security (RLS)**</u>: <br>
   Power BI RLS rules map each collection officer to their assigned client portfolios and regions via the officer_client_mapping table. Officers see only the   <br> accounts they are authorised to action.
@@ -121,12 +119,18 @@ Failed steps trigger an email alert to the Data Engineering team. Each step logs
 
 
 ### LTV Calculation Logic
+```
+Total Collateral Value  = SUM(QuantityHeld x CurrentMarketPrice) across all eligible collateral positions per debtor
+Total Outstanding Balance = SUM(CurrentOutstandingBalance) across all active and defaulted loans per debtor
+LTV Ratio               = Total Outstanding Balance / Total Collateral Value
+LTV Percentage          = LTV Ratio x 100
+```
 
-Total Collateral Value = SUM(QuantityHeld x CurrentMarketPrice) for all tickers per debtor
-LTV Ratio = OutstandingBalance / Total Collateral Value
-High Risk Flag = TRUE where LTV Ratio > 0.80
+Risk flag thresholds: CRITICAL where LTV >= 1.00, HIGH where 0.80 <= LTV < 1.00, 
+MEDIUM where 0.60 <= LTV < 0.80, LOW where LTV < 0.60.
 
-Edge case handling: where no price exists for a ticker on the current date, the most recent available price within the last 5 business days is used. Records with no price within 5 days are flagged as STALE DATA and excluded from LTV calculation.
+Edge case handling: where no price exists for a ticker on the current date, the most recent available price within the last 5 business days is used. 
+Records with no price within 5 days are flagged as MISSING and excluded from LTV calculation.
 
 ### Architecture Decision Notes
 
@@ -142,12 +146,12 @@ NGX-listed securities on Yahoo Finance have inconsistent data coverage and frequ
 
 ### Project Context
 
-This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage.
+This pipeline was designed and built based on operational challenges observed in the debt recovery and financial assurance industry. All data used in this project is fully synthetic, generated specifically to simulate realistic data quality issues and relational complexity. No real debtor, client, or financial data was used at any stage. The business rules, risk thresholds, and data flow design reflect realistic operational patterns in the Nigerian financial services debt recovery context.
 
-## Known Limitations and Technical Debt
 
-The following items were designed and documented but not fully implemented 
-due to Fabric free trial environment constraints or scope decisions. 
+### Known Limitations and Technical Debt
+
+The following items were designed and documented but not fully implemented due to Fabric free trial environment constraints or scope decisions. 
 Each has a defined remediation path for a production deployment.
 
 | Item | Severity | Reason | Remediation |
@@ -157,10 +161,13 @@ Each has a defined remediation path for a production deployment.
 | BTC-USD weekend price gaps | MEDIUM | yfinance returns NULL ClosePrice for BTC-USD on weekend dates. 17 records flagged as MISSING and excluded from LTV. | Source weekend crypto prices from Coinbase or Binance API in production |
 | Public holidays not modelled in dim_date | LOW | Licensed holiday calendar required for accurate IsMarketDay classification. | Integrate a licensed public holiday calendar in production |
 
-[Business Rules Document](docs/business-rules/CSL_DE_001_Business_Rules_v1.0.md)
-
-[Gold Layer Summary](docs/gold/CSL_DE_001_Gold_Layer_Summary_v1.0.md)
-
-[Data Dictionary - Gold Layer](docs/data-dictionary/CSL_DE_001_Data_Dictionary_Gold_v1.0.md)
+### Documentation
+| Document | Description |
+|---|---|
+| [Business Rules Document](docs/business-rules/CSL_DE_001_Business_Rules_v1.0.md) | Defines LTV formula, risk thresholds, balance authority rule, stale price logic, and all business rules implemented in the Gold layer |
+| [Gold Layer Summary](docs/gold/CSL_DE_001_Gold_Layer_Summary_v1.0.md) | Complete summary of the Gold layer build including business logic implemented, dimensional modelling decisions, idempotency mechanisms, and pipeline run results |
+| [Data Dictionary - Gold Layer](docs/data-dictionary/CSL_DE_001_Data_Dictionary_Gold_v1.0.md) | Column level definitions for all 9 Gold layer tables including data types, nullability, descriptions, and example values |
+| [Architecture Diagram - High Level](docs/architecture/CSL_DE_001_Architecture_HighLevel_v1.0.svg) | End-to-end architecture showing all five zones from data sources to presentation layer |
+| [Architecture Diagram - Ingestion Detail](docs/architecture/CSL_DE_001_Architecture_Ingestion_Detail_v1.0.svg) | Detailed ingestion diagram showing each source connection, tool, and Bronze landing pattern |
 
 ***(CSL-DE-001 | Data Engineering Division | March 2026)***
