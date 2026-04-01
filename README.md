@@ -50,7 +50,7 @@ This pipeline solves that problem by computing Loan-to-Value ratios per debtor d
 
 <img width="7951" height="2972" alt="CSL_DE_001_Architecture_HighLevel_v3 0 drawio" src="https://github.com/user-attachments/assets/b75279d1-2285-4054-93ae-c70c5f692176" />
 
-![Architecture Diagram - High Level](docs/screenshots/CSL_DE_001_Architecture_HighLevel_v1.0)
+![Architecture Diagram - High Level](docs/screenshots/CSL_DE_001_Architecture_HighLevel_v1.0.png)
 
 The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ingesting data from three sources into Bronze, transforming and joining in Silver, computing business logic in Gold, and serving a Direct Lake Power BI dashboard.
 
