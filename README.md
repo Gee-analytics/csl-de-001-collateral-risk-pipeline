@@ -60,7 +60,7 @@ The pipeline follows a Medallion Lakehouse architecture on Microsoft Fabric, ing
 
 
 ### Pipeline monitoring:
-![Monitoring Hub](docs/screenshots/csl-collateral-risk-pipeline-monitor.png.png)
+![Monitoring Hub](docs/screenshots/csl-collateral-risk-pipeline-monitor.png)
 
 
 ## Pipeline Results
