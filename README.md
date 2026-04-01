@@ -5,6 +5,8 @@ End-to-end data engineering pipeline on Microsoft Fabric monitoring debtor colla
 
 ![Pipeline Master Orchestration](docs/screenshots/pipeline_master_orchestration.png)
 
+![Pipeline Master Orchestration](docs/screenshots/pipeline-master-orchestrator.png)
+
 
 <h3>Overview</h3>
 <p>Collection Solutions Limited (CSL) is a Nigerian debt recovery and financial assurance agency managing delinquent receivables on behalf of multiple client banks. This project implements an automated, end-to-end data engineering pipeline that monitors the market value of debtor pledged collateral against outstanding loan balances in near real-time, triggering margin call alerts before collateral value falls below the debt threshold. <br>
